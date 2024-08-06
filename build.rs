@@ -19,26 +19,19 @@ pub fn main() {
     // Try to get the version using `git describe`, otherwise fall back to the
     // Cargo.toml version. This is used in main.rs
 
-    let toml_version = std::env::var("CARGO_PKG_VERSION").unwrap();
     let version = Command::new("git").arg("describe").arg("--always").output();
     let version = if version.is_ok() && version.as_ref().unwrap().status.success() {
         rerun_if_changed(&package_root.join(".git/HEAD"));
         rerun_if_changed(&package_root.join(".git/refs"));
-        let git_version = std::str::from_utf8(&version.unwrap().stdout)
-            .unwrap()
-            .trim_end()
-            .to_string();
-        if git_version
-            .strip_prefix('v')
-            .is_some_and(|v| !v.starts_with(&toml_version))
-            || !git_version.starts_with('v')
-        {
-            println!("cargo:warning=Cargo.toml version (v{}) is not a prefix of `git describe` version ({})!", toml_version, git_version);
-        }
-        git_version
+        format!(
+            "{} (git)",
+            std::str::from_utf8(&version.unwrap().stdout)
+                .unwrap()
+                .trim_end()
+        )
     } else {
         rerun_if_changed(&package_root.join("Cargo.toml"));
-        format!("v{} (git rev. unknown)", toml_version)
+        format!("v{}", std::env::var("CARGO_PKG_VERSION").unwrap())
     };
     std::fs::write(out_dir.join("version.txt"), version).unwrap();
 
@@ -107,24 +100,4 @@ pub fn main() {
     assert!(dynarmic_legal.contains(dynarmic_license_oneline));
     let dynarmic_summary = dynarmic_legal.replace(dynarmic_license_oneline, &dynarmic_license);
     std::fs::write(out_dir.join("dynarmic_license.txt"), dynarmic_summary).unwrap();
-
-    // libc++_shared.so has to be copied into the APK. See README of cargo-ndk.
-    if std::env::var("CARGO_CFG_TARGET_OS").unwrap() == "android" {
-        println!("cargo:rustc-link-lib=c++_shared");
-        let sysroot_libs_path =
-            PathBuf::from(std::env::var_os("CARGO_NDK_SYSROOT_LIBS_PATH").unwrap());
-        let lib_path = sysroot_libs_path.join("libc++_shared.so");
-        std::fs::copy(
-            lib_path,
-            // cargo-ndk as invoked by cargo-ndk-android-gradle actually
-            // copies from the target directory, using this hacky path
-            // concatenation approach. :(
-            package_root
-                .join("target")
-                .join(std::env::var("TARGET").unwrap())
-                .join(std::env::var("PROFILE").unwrap())
-                .join("libc++_shared.so"),
-        )
-        .unwrap();
-    }
 }
