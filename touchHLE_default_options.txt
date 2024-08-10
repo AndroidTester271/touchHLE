@@ -1,0 +1,64 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# ---
+#
+# This file contains touchHLE's recommended default options for various apps.
+#
+# *** Don't edit this file yourself! Use touchHLE_options.txt instead. ***
+#
+# ---
+#
+# Each line in this file specifies options for an app; there should only be one
+# line per app. A line should consist of the identifier for an app, followed by
+# a colon (:), followed by the options to apply. To find out an app's
+# identifier, you can run it in touchHLE and look at the “App bundle info”
+# output. To get a list of possible options, see OPTIONS_HELP.txt or run
+# touchHLE with the --help flag.
+#
+# Text on a line following a hash sign (#) is treated as a comment and ignored.
+# Empty lines are also ignored.
+#
+# Guidelines for default options:
+# - Even if an app supports auto-rotation, it's good to specify the required
+#   orientation anyway, so that it doesn't display in the wrong orientation for
+#   a few seconds during startup.
+# - The scale hack is not exactly faithful to the original experience, and there
+#   is no scale factor that works for everyone, so it shouldn't be used here.
+# - Use --button-to-touch= for convenience if it's a game playable with the
+#   accelerometer and has touch targets in predictable locations.
+# - Use --stabilize-virtual-cursor= if the game's menus are practically unusable
+#   without it.
+
+# Super Monkey Ball and Super Monkey Ball Lite
+# B = speed up level intro, X = pause
+com.ooi.supermonkeyball: --landscape-left --y-tilt-offset=24 --button-to-touch=B,470,160 --button-to-touch=X,240,10
+smblite: --landscape-left --y-tilt-offset=24 --button-to-touch=B,470,160 --button-to-touch=X,240,10
+
+# Crash Bandicoot Nitro Kart 3D
+# A = jump/drift, B = brake, X = pause, Y = use item
+com.vgmobile.cnk2: --landscape-left --button-to-touch=A,240,160 --button-to-touch=B,240,310 --button-to-touch=X,10,310 --button-to-touch=Y,470,310
+
+# Mystery Mania
+com.ea.mysterymania.inc: --landscape-left
+
+# Fastlane Street Racing
+# A = accelerate, B = brake
+com.atodab.actane: --landscape-left --button-to-touch=A,430,300 --button-to-touch=B,30,300
+
+# Wolfenstein 3D
+com.idsoftware.wolf3d: --landscape-right
+
+# KataDama (I Love Katamari)
+com.namconetworks.katamari: --landscape-left --stabilize-virtual-cursor=0.1,10
+
+# Wolfenstein RPG
+com.eamobile.wolfbv: --landscape-left --stabilize-virtual-cursor=0.1,10 --button-to-touch=A,240,160 --button-to-touch=B,240,280 --button-to-touch=X,26,280 --button-to-touch=Y,454,280 --button-to-touch=DPadLeft,34,178 --button-to-touch=DPadUp,76,140 --button-to-touch=DPadRight,116,180 --button-to-touch=DPadDown,76,220
+com.eamobile.wolfinc: --landscape-left --stabilize-virtual-cursor=0.1,10 --button-to-touch=A,240,160 --button-to-touch=B,240,280 --button-to-touch=X,26,280 --button-to-touch=Y,454,280 --button-to-touch=DPadLeft,34,178 --button-to-touch=DPadUp,76,140 --button-to-touch=DPadRight,116,180 --button-to-touch=DPadDown,76,220
+
+# Doom II RPG
+com.idsoftware.Doom2rpg: --landscape-left --stabilize-virtual-cursor=0.1,10 --button-to-touch=A,240,160 --button-to-touch=B,240,280 --button-to-touch=X,176,280 --button-to-touch=Y,320,280 --button-to-touch=DPadLeft,34,178 --button-to-touch=DPadUp,76,140 --button-to-touch=DPadRight,116,180 --button-to-touch=DPadDown,76,220
+
+# Tony Hawk's Pro Skater 2
+com.activision.thps2: --landscape-left
