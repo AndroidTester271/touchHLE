@@ -11,7 +11,7 @@
 use crate::frameworks::foundation::NSTimeInterval;
 use crate::objc::{
     autorelease, id, msg, msg_class, nil, objc_classes, release, ClassExports, HostObject,
-    NSZonePtr, TrivialHostObject,
+    NSZonePtr, TrivialHostObject, SEL,
 };
 use crate::Environment;
 use std::time::{Duration, Instant};
@@ -125,9 +125,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 pub(super) fn handle_accelerometer(env: &mut Environment) -> Option<Instant> {
     let state = &mut env.framework_state.uikit.ui_accelerometer;
 
-    let Some(delegate) = state.delegate else {
-        return None;
-    };
+    let delegate = state.delegate?;
 
     let ns_interval = state.update_interval.unwrap_or(DEFAULT_UPDATE_INTERVAL);
     let rust_interval = Duration::from_secs_f64(ns_interval);
@@ -178,8 +176,14 @@ pub(super) fn handle_accelerometer(env: &mut Environment) -> Option<Instant> {
         accelerometer,
         acceleration,
     );
-    let _: () = msg![env; delegate accelerometer:accelerometer
-                                   didAccelerate:acceleration];
+    let sel: SEL = env
+        .objc
+        .register_host_selector("accelerometer:didAccelerate:".to_string(), &mut env.mem);
+    let responds: bool = msg![env; delegate respondsToSelector:sel];
+    if responds {
+        let _: () = msg![env; delegate accelerometer:accelerometer
+                                       didAccelerate:acceleration];
+    }
 
     release(env, pool);
 
