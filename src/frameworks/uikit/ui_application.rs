@@ -6,12 +6,13 @@
 //! `UIApplication` and `UIApplicationMain`.
 
 use super::ui_device::*;
-use crate::dyld::{export_c_func, FunctionExports};
-use crate::frameworks::foundation::{ns_array, ns_string};
+use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant};
+use crate::frameworks::foundation::{ns_array, ns_string, NSUInteger, NSInteger, NSTimeInterval};
 use crate::frameworks::uikit::ui_nib::load_main_nib_file;
 use crate::mem::MutPtr;
 use crate::objc::{
-    id, msg, msg_class, nil, objc_classes, release, retain, ClassExports, HostObject, NSZonePtr,
+    autorelease, id, msg, msg_class, nil, objc_classes, release, retain, ClassExports, HostObject,
+    NSZonePtr,
 };
 use crate::window::DeviceOrientation;
 use crate::Environment;
@@ -30,6 +31,7 @@ struct UIApplicationHostObject {
 impl HostObject for UIApplicationHostObject {}
 
 type UIInterfaceOrientation = UIDeviceOrientation;
+type UIRemoteNotificationType = NSUInteger;
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -47,15 +49,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 + (id)sharedApplication {
-    env.framework_state.uikit.ui_application.shared_application.unwrap()
+    // assert!(env.framework_state.uikit.ui_application.shared_application.is_none());
+    env.framework_state.uikit.ui_application.shared_application.unwrap_or(nil)
 }
 
 // This should only be called by UIApplicationMain
 - (id)init {
-    //assert!(env.framework_state.uikit.ui_application.shared_application.is_none());
-    if let Some(app) = env.framework_state.uikit.ui_application.shared_application {
-        return app;
-    }
     env.framework_state.uikit.ui_application.shared_application = Some(this);
     this
 }
@@ -74,11 +73,20 @@ pub const CLASSES: ClassExports = objc_classes! {
     let old_delegate = std::mem::replace(&mut host_object.delegate, delegate);
     if host_object.delegate_is_retained {
         host_object.delegate_is_retained = false;
-        release(env, old_delegate);
+        if delegate != old_delegate {
+            release(env, old_delegate);
+        }
     }
 }
 
-// TODO: statusBarHidden getter
+- (UIInterfaceOrientation)statusBarOrientation {
+    match env.window_mut().device_orientation {
+        DeviceOrientation::Portrait => UIDeviceOrientationPortrait,
+        DeviceOrientation::LandscapeLeft => UIDeviceOrientationLandscapeLeft,
+        DeviceOrientation::LandscapeRight => UIDeviceOrientationLandscapeRight,
+    }
+}
+
 - (())setStatusBarHidden:(bool)hidden {
     env.framework_state.uikit.ui_application.status_bar_hidden = hidden;
 }
@@ -88,7 +96,13 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg![env; this setStatusBarHidden:hidden]
 }
 
-// TODO: statusBarOrientation getter
+- (UIInterfaceOrientation)statusBarOrientation {
+    match env.window().current_rotation() {
+        DeviceOrientation::Portrait => UIDeviceOrientationPortrait,
+        DeviceOrientation::LandscapeLeft => UIDeviceOrientationLandscapeLeft,
+        DeviceOrientation::LandscapeRight => UIDeviceOrientationLandscapeRight
+    }
+}
 - (())setStatusBarOrientation:(UIInterfaceOrientation)orientation {
     env.window_mut().rotate_device(match orientation {
         UIDeviceOrientationPortrait => DeviceOrientation::Portrait,
@@ -101,6 +115,24 @@ pub const CLASSES: ClassExports = objc_classes! {
                      animated:(bool)_animated {
     // TODO: animation
     msg![env; this setStatusBarOrientation:orientation]
+}
+
+- (())setStatusBarStyle:(NSInteger)statusBarStyle animated:(bool)_animated {
+    // TODO
+}
+
+- (())setNetworkActivityIndicatorVisible:(bool)visible {
+    log!("TODO: setNetworkActivityIndicatorVisible:{}", visible);
+}
+
+- (())setStatusBarStyle:(bool)status {
+    log!("TODO: setStatusBarStyle:{}", status);
+}
+- (NSTimeInterval)statusBarOrientationAnimationDuration {
+    0.0
+}
+- (bool)isStatusBarHidden {
+    true
 }
 
 - (bool)idleTimerDisabled {
@@ -138,25 +170,27 @@ pub const CLASSES: ClassExports = objc_classes! {
     log!("TODO: ignoring endIgnoringInteractionEvents");
 }
 
-- (id)keyWindow {
-    *env
-        .framework_state
-        .uikit
-        .ui_view
-        .ui_window
-        .visible_windows
-        .last()
-        .unwrap()
-}
-
 - (id)windows {
-    let x: Vec<id> = (*env
+    log!("TODO: UIApplication's windows getter is returning only visible windows");
+    let visible_windows: Vec<id> = (*env
         .framework_state
         .uikit
         .ui_view
         .ui_window
         .visible_windows).to_vec();
-    ns_array::from_vec(env, x)
+    for window in &visible_windows {
+        retain(env, *window);
+    }
+    let windows = ns_array::from_vec(env, visible_windows);
+    autorelease(env, windows)
+}
+
+- (())registerForRemoteNotificationTypes:(UIRemoteNotificationType)types {
+    log!("TODO: ignoring registerForRemoteNotificationTypes:{}", types);
+}
+
+- (id)keyWindow {
+    nil
 }
 
 @end
@@ -201,7 +235,7 @@ pub(super) fn UIApplicationMain(
             retain(env, delegate);
         } else {
             // We have to construct the delegate.
-            assert!(delegate_class_name != nil);
+            // assert!(delegate_class_name != nil);
             let name = ns_string::to_rust_string(env, delegate_class_name);
             let class = env.objc.get_known_class(&name, &mut env.mem);
             let delegate: id = msg![env; class new];
@@ -219,8 +253,8 @@ pub(super) fn UIApplicationMain(
     {
         let pool: id = msg_class![env; NSAutoreleasePool new];
         let delegate: id = msg![env; ui_application delegate];
-        // IOS 3+ apps usually use application:didFinishLaunchingWithOptions:, and it
-        // seems to be prioritized over applicationDidFinishLaunching:.
+        // iOS 3+ apps usually use application:didFinishLaunchingWithOptions:,
+        // and it seems to be prioritized over applicationDidFinishLaunching:.
         if env.objc.object_has_method_named(
             &env.mem,
             delegate,
@@ -246,7 +280,8 @@ pub(super) fn UIApplicationMain(
         () = msg![env; view layoutSubviews];
     }
 
-    // Send applicationDidBecomeActive now that the application is ready to become active.
+    // Send applicationDidBecomeActive now that the application is ready to
+    // become active.
     {
         let pool: id = msg_class![env; NSAutoreleasePool new];
         let delegate: id = msg![env; ui_application delegate];
@@ -305,3 +340,8 @@ pub(super) fn exit(env: &mut Environment) {
 }
 
 pub const FUNCTIONS: FunctionExports = &[export_c_func!(UIApplicationMain(_, _, _, _))];
+
+pub const CONSTANTS: ConstantExports = &[(
+    "_UIApplicationLaunchOptionsURLKey",
+    HostConstant::NSString("UIApplicationLaunchOptionsURLKey"),
+)];

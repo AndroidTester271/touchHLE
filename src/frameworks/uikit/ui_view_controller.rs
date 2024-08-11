@@ -5,13 +5,13 @@
  */
 //! `UIViewController`.
 
-use crate::frameworks::foundation::ns_string::get_static_str;
+use crate::frameworks::foundation::ns_string::{get_static_str, to_rust_string};
 use crate::objc::{
     id, msg, msg_class, nil, objc_classes, release, retain, ClassExports, HostObject, NSZonePtr,
 };
 
 #[derive(Default)]
-struct UIViewControllerHostObject {
+pub struct UIViewControllerHostObject {
     view: id,
 }
 impl HostObject for UIViewControllerHostObject {}
@@ -25,6 +25,31 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)allocWithZone:(NSZonePtr)_zone {
     let host_object = Box::<UIViewControllerHostObject>::default();
     env.objc.alloc_object(this, host_object, &mut env.mem)
+}
+
+// TODO: this should be the designated initializer
+- (id)initWithNibName:(id)nibNameOrNil // NSString *
+               bundle:(id)nibBundleOrNil { // NSBundle *
+    // assert!(nibBundleOrNil == nil);
+    let x = to_rust_string(env, nibNameOrNil);
+    log!("initWithNibName: {}", x);
+    let bundle: id = msg_class![env; NSBundle mainBundle];
+    let type_: id = get_static_str(env, "nib");
+    let path: id = msg![env; bundle pathForResource:nibNameOrNil ofType:type_];
+
+    assert!(msg![env; path isAbsolutePath]);
+    let ns_data: id = msg_class![env; NSData dataWithContentsOfFile:path];
+    assert!(ns_data != nil);
+
+    let unarchiver = msg_class![env; NSKeyedUnarchiver alloc];
+    let unarchiver = msg![env; unarchiver initForReadingWithData:ns_data];
+
+    // We don't need to do anything with the list of objects, but deserializing
+    // it ensures everything else is deserialized.
+    let objects_key = get_static_str(env, "UINibObjectsKey");
+    let _objects: id = msg![env; unarchiver decodeObjectForKey:objects_key];
+
+    msg![env; this initWithCoder:unarchiver]
 }
 
 - (id)initWithCoder:(id)coder {
@@ -68,8 +93,25 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
 }
 
+- (())setTitle:(id)title {
+    let title = to_rust_string(env, title);
+    log!("TODO: [(UIViewController*){:?} setTitle:{}]", this, title); // TODO
+}
+
 - (())setEditing:(bool)editing {
     log!("TODO: [(UIViewController*){:?} setEditing:{}]", this, editing); // TODO
+}
+
+- (())dismissModalViewControllerAnimated:(bool)animated {
+    log!("TODO: [(UIViewController*){:?} dismissModalViewControllerAnimated:{}]", this, animated); // TODO
+}
+
+- (())viewWillAppear:(bool)animated {
+    log!("TODO: [(UIViewController*){:?} viewWillAppear:{}]", this, animated); // TODO
+}
+
+- (())viewDidAppear:(bool)animated {
+    log!("TODO: [(UIViewController*){:?} viewDidAppear:{}]", this, animated); // TODO
 }
 
 @end

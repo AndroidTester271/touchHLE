@@ -17,6 +17,14 @@ pub(super) struct State {
     pub(super) context_stack: Vec<CGContextRef>,
 }
 
+pub fn UIGraphicsBeginImageContext(env: &mut Environment, context: CGContextRef) {
+    CGContextRetain(env, context);
+    env.framework_state
+        .uikit
+        .ui_graphics
+        .context_stack
+        .push(context);
+}
 pub fn UIGraphicsPushContext(env: &mut Environment, context: CGContextRef) {
     CGContextRetain(env, context);
     env.framework_state
@@ -40,6 +48,7 @@ pub fn UIGraphicsGetCurrentContext(env: &mut Environment) -> CGContextRef {
 }
 
 pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(UIGraphicsBeginImageContext(_)),
     export_c_func!(UIGraphicsPushContext(_)),
     export_c_func!(UIGraphicsPopContext()),
     export_c_func!(UIGraphicsGetCurrentContext()),
