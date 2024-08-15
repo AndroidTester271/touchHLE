@@ -7,8 +7,7 @@
 //! very long and frequently-updated list.
 
 use crate::frameworks::{
-    av_audio, core_animation, core_foundation, core_graphics, foundation, media_player, opengles,
-    store_kit, uikit,
+    av_audio, core_animation, core_graphics, foundation, media_player, opengles, uikit,
 };
 
 /// All the lists of classes that the runtime should search through.
@@ -20,7 +19,6 @@ pub const CLASS_LISTS: &[super::ClassExports] = &[
     core_graphics::cg_color_space::CLASSES,
     core_graphics::cg_context::CLASSES,
     core_graphics::cg_image::CLASSES,
-    core_foundation::cf_run_loop_timer::CLASSES, // Special internal classes.
     foundation::ns_array::CLASSES,
     foundation::ns_autorelease_pool::CLASSES,
     foundation::ns_bundle::CLASSES,
@@ -32,7 +30,6 @@ pub const CLASS_LISTS: &[super::ClassExports] = &[
     foundation::ns_dictionary::CLASSES,
     foundation::ns_enumerator::CLASSES,
     foundation::ns_file_manager::CLASSES,
-    foundation::ns_file_handle::CLASSES,
     foundation::ns_keyed_unarchiver::CLASSES,
     foundation::ns_locale::CLASSES,
     foundation::ns_notification::CLASSES,
@@ -45,14 +42,13 @@ pub const CLASS_LISTS: &[super::ClassExports] = &[
     foundation::ns_string::CLASSES,
     foundation::ns_thread::CLASSES,
     foundation::ns_timer::CLASSES,
+    foundation::fake_cftimer_target::CLASSES,
     foundation::ns_url::CLASSES,
     foundation::ns_user_defaults::CLASSES,
     foundation::ns_value::CLASSES,
     av_audio::av_audio_player::CLASSES,
     media_player::movie_player::CLASSES,
-    media_player::music_player::CLASSES,
     opengles::eagl::CLASSES,
-    store_kit::sk_product::CLASSES,
     uikit::ui_accelerometer::CLASSES,
     uikit::ui_activity_indicator_view::CLASSES,
     uikit::ui_application::CLASSES,
