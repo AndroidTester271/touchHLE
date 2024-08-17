@@ -78,13 +78,6 @@ pub enum FingerId {
 pub type Coords = (f32, f32);
 
 #[derive(Debug)]
-pub enum TextInputEvent {
-    Text(String),
-    Backspace,
-    Return,
-}
-
-#[derive(Debug)]
 pub enum Event {
     /// User requested quit.
     Quit,
@@ -100,7 +93,6 @@ pub enum Event {
     /// User pressed F12, requesting that execution be paused and the debugger
     /// take over.
     EnterDebugger,
-    TextInput(TextInputEvent),
 }
 
 pub enum GLVersion {
@@ -184,7 +176,7 @@ impl Window {
         // is available, but we don't want to enable SDL's HIDAPI controller
         // drivers because they cause duplicated controllers on macOS
         // (https://github.com/libsdl-org/SDL/issues/7479). Once that's fixed,
-        // remove this (https://github.com/touchHLE/touchHLE/issues/85).
+        // remove this (https://github.com/hikari-no-yume/touchHLE/issues/85).
         sdl2::hint::set("SDL_JOYSTICK_HIDAPI", "0");
 
         if env::consts::OS == "android" {
@@ -369,9 +361,6 @@ impl Window {
                 sdl2::controller::Button::B => Some(crate::options::Button::B),
                 sdl2::controller::Button::X => Some(crate::options::Button::X),
                 sdl2::controller::Button::Y => Some(crate::options::Button::Y),
-                sdl2::controller::Button::LeftShoulder => {
-                    Some(crate::options::Button::LeftShoulder)
-                }
                 _ => None,
             }
         }
@@ -582,24 +571,6 @@ impl Window {
                     // the event but it's stuck in the queue.
                     echo!("F12 pressed, EnterDebugger event queued.");
                     Event::EnterDebugger
-                }
-                E::KeyDown {
-                    keycode: Some(sdl2::keyboard::Keycode::Backspace),
-                    ..
-                } => {
-                    log_dbg!("SDL TextInput Backspace");
-                    Event::TextInput(TextInputEvent::Backspace)
-                }
-                E::KeyDown {
-                    keycode: Some(sdl2::keyboard::Keycode::Return),
-                    ..
-                } => {
-                    log_dbg!("SDL TextInput Return");
-                    Event::TextInput(TextInputEvent::Return)
-                }
-                E::TextInput { text, .. } => {
-                    log_dbg!("SDL TextInput {}", text);
-                    Event::TextInput(TextInputEvent::Text(text))
                 }
                 _ => continue,
             })

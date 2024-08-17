@@ -234,6 +234,8 @@ pub struct Mem {
     null_segment_size: VAddr,
 
     allocator: allocator::Allocator,
+
+    pub secondary_thread_stack_size_override: Option<GuestUSize>,
 }
 
 impl Drop for Mem {
@@ -262,7 +264,7 @@ impl Mem {
     /// Create a fresh instance of guest memory.
     pub fn new() -> Mem {
         // This will hopefully get the host OS to lazily allocate the memory.
-        let layout = std::alloc::Layout::new::<Bytes>();
+        let layout = std::alloc::Layout::new::<Bytes>().align_to(4096).unwrap();
         let bytes = unsafe { std::alloc::alloc_zeroed(layout) as *mut Bytes };
 
         let allocator = allocator::Allocator::new();
@@ -271,6 +273,7 @@ impl Mem {
             bytes,
             null_segment_size: 0,
             allocator,
+            secondary_thread_stack_size_override: None
         }
     }
 
@@ -284,6 +287,7 @@ impl Mem {
             bytes: _,
             null_segment_size: _,
             ref mut allocator,
+            ..
         } = mem;
         let used_chunks = allocator.reset_and_drain_used_chunks();
         for allocator::Chunk { base, size } in used_chunks {
@@ -429,19 +433,6 @@ impl Mem {
         self.bytes_at_mut(ptr.cast(), size).as_mut_ptr().cast()
     }
 
-    /// Transform a host pointer addressing a location in guest memory back into
-    /// a guest pointer. This exists solely to deal with OpenGL `glGetPointerv`.
-    /// You should never have another reason to use this.
-    ///
-    /// Panics if the host pointer is not addressing a location in guest memory.
-    pub fn host_ptr_to_guest_ptr(&self, host_ptr: *const std::ffi::c_void) -> ConstVoidPtr {
-        let host_ptr = host_ptr.cast::<u8>();
-        let guest_mem_range = self.bytes().as_ptr_range();
-        assert!(guest_mem_range.contains(&host_ptr));
-        let guest_addr = host_ptr as usize - guest_mem_range.start as usize;
-        Ptr::from_bits(u32::try_from(guest_addr).unwrap())
-    }
-
     /// Read a value for memory. This is the preferred way to read memory in
     /// most cases.
     pub fn read<T, const MUT: bool>(&self, ptr: Ptr<T, MUT>) -> T
@@ -492,6 +483,7 @@ impl Mem {
         if old_size >= size {
             return old_ptr;
         }
+        assert!(size > old_size);
         let new_ptr = self.alloc(size);
         self.memmove(new_ptr, old_ptr.cast_const(), old_size);
         self.free(old_ptr);
@@ -526,6 +518,24 @@ impl Mem {
         ptr
     }
 
+    pub fn wcstr_at<const MUT: bool>(&self, ptr: Ptr<wchar_t, MUT>) -> String {
+        let mut len = 0;
+        while self.read(ptr + len) != wchar_t::default() {
+            len += 1;
+        }
+        let iter = self
+            .bytes_at(ptr.cast(), len * guest_size_of::<wchar_t>())
+            .chunks(4);
+        let x = iter.map(|chunk| {
+            let tmp = u32::from_le_bytes(chunk.try_into().unwrap());
+            char::from_u32(tmp).unwrap_or_else(|| {
+                log!("last char: '{}' '{:#x}'", tmp, tmp);
+                panic!()
+            })
+        });
+        String::from_iter(x)
+    }
+
     /// Get a C string (null-terminated) as a slice. The null terminator is not
     /// included in the slice.
     pub fn cstr_at<const MUT: bool>(&self, ptr: Ptr<u8, MUT>) -> &[u8] {
@@ -542,18 +552,6 @@ impl Mem {
     pub fn cstr_at_utf8<const MUT: bool>(&self, ptr: Ptr<u8, MUT>) -> Result<&str, &[u8]> {
         let bytes = self.cstr_at(ptr);
         std::str::from_utf8(bytes).map_err(|_| bytes)
-    }
-
-    pub fn wcstr_at<const MUT: bool>(&self, ptr: Ptr<wchar_t, MUT>) -> String {
-        let mut len = 0;
-        while self.read(ptr + len) != wchar_t::default() {
-            len += 1;
-        }
-        let iter = self
-            .bytes_at(ptr.cast(), len * guest_size_of::<wchar_t>())
-            .chunks(4)
-            .map(|chunk| char::from_u32(u32::from_le_bytes(chunk.try_into().unwrap())).unwrap());
-        String::from_iter(iter)
     }
 
     /// Permanently mark a region of address space as being unusable to the

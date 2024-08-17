@@ -4,7 +4,7 @@ This will list notable changes from release to release, and credit the people wh
 
 Names preceded by an @ are GitHub usernames.
 
-Lists of new working apps are a guideline, not a guarantee of support, and are not comprehensive. Credits for new working apps indicate someone who put a lot of effort into getting that particular app working, but compatibility is always a cumulative collaborative effort. The “Various small contributions” in the changelog often add up in a big way.
+Lists of new working apps are a guideline, not a guarantee of support, and are not comprehensive. Credits for new working apps indicate someone who put a lot of effort into getting that particular app working, but compatibility is always a cumulative collaborative effort.
 
 Changes are categorised as follows:
 
@@ -13,31 +13,12 @@ Changes are categorised as follows:
 * Usability: changes to features of the emulator unrelated to the above, e.g. new input methods.
 * Other: when none of the above seem to fit.
 
-## Next
+## NEXT
 
 Compatibility:
 
-- New working apps:
-  - [Dungeon Hunter](https://appdb.touchhle.org/apps/313) (@ciciplusplus)
 - API support improvements:
-  - Various small contributions. (@hikari-no-yume, @alborrajo, @ciciplusplus)
-
-Usability:
-
-- UITextField now supports real text input with a keyboard. On Windows/macOS physical keyboard is used, on Android it's done via a system soft keyboard. (@ciciplusplus)
-
-## v0.2.2 (2024-04-01)
-
-Compatibility:
-
-- New working apps:
-  - [Rayman 2](https://appdb.touchhle.org/apps/279) (@ciciplusplus)
-  - [Tony Hawk's Pro Skater 2](https://appdb.touchhle.org/apps/75) (@ciciplusplus)
-  - [Earthworm Jim](https://appdb.touchhle.org/apps/280) (@ciciplusplus)
-  - [Castle of Magic](https://appdb.touchhle.org/apps/281) (@ciciplusplus)
-- API support improvements:
-  - Various small contributions. (@alborrajo, @WhatAmISupposedToPutHere, @ciciplusplus, @hikari-no-yume, @LennyKappa, @Skryptonyte, @teromene)
-  - AAC audio files (AAC-LC in a typical MPEG-4 container) are now supported in Audio Toolbox. This is done in a fairly hacky way so it might not work for some apps. (@hikari-no-yume)
+  - Various small contributions. (@alborrajo, @WhatAmISupposedToPutHere, @ciciplusplus, @hikari-no-yume, @LennyKappa)
 - There is now support for iPhone OS 3.0 apps, in addition to the existing support for iPhone OS 2.x apps:
   - Support for fat binaries has been added. touchHLE will no longer crash when trying to run an app with both ARMv6 and ARMv7 versions, and instead will try to pick the best available option (ARMv7, or failing this, ARMv6). This improves compatibility with iPhone OS 3.0 apps, many of which use fat binaries in order to improve performance on the iPhone 3GS and iPod touch (3rd generation). (@WhatAmISupposedToPutHere)
   - The bundled ARMv6 dynamic libraries, libgcc and libstdc++, have been updated to their iPhone OS 3.0.1 versions. Previously the iPhone OS 2.2.1 versions were used. (@hikari-no-yume)
@@ -45,8 +26,7 @@ Compatibility:
 
 Usability:
 
-- The `--button-to-touch=` option now supports the Start and the LeftShoulder buttons in addition to the A/B/X/Y buttons and D-pad. Certain games' default options have been adjusted to use them. (@nighto)
-- Default options for various games (@nighto)
+- The `--button-to-touch=` option now supports the Start button in addition to the A/B/X/Y buttons and D-pad. Certain games' default options have been adjusted to use the Start button. (@nighto)
 
 ## v0.2.1 (2023-10-31)
 

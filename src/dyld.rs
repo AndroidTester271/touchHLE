@@ -90,19 +90,16 @@ macro_rules! export_c_func {
 }
 pub use crate::export_c_func; // #[macro_export] is weird...
 
-/// Other variant of [export_c_func] macro, allowing to define an alias
-/// for the exporting function. This is useful then alias may contain
-/// characters not normally allowed for Rust function's names. (e.g. `$`)
 #[macro_export]
-macro_rules! export_c_func_aliased {
-    ($alias:literal, $name:ident ($($_:ty),*)) => {
+macro_rules! export_c_func2 {
+    ($name_over:literal, $name:ident ($($_:ty),*)) => {
         (
-            concat!("_", $alias),
+            $name_over,
             &($name as fn(&mut $crate::Environment, $($_),*) -> _)
         )
     };
 }
-pub use crate::export_c_func_aliased; // #[macro_export] is weird...
+pub use crate::export_c_func2; // #[macro_export] is weird...
 
 /// Type for describing a constant (C `extern const` symbol) that will be
 /// created by the linker if the guest app references it. See [ConstantExports].
@@ -339,6 +336,11 @@ impl Dyld {
             {
                 // Often used for C++ RTTI
                 Ptr::from_bits(external_addr)
+            } else if let Some(&(symbol, _)) = search_lists(function_lists::FUNCTION_LISTS, name) {
+                self
+                    .create_proc_address_no_inval(mem, symbol)
+                    .unwrap()
+                    .to_ptr()
             } else {
                 unhandled_relocations
                     .entry(name)
@@ -584,7 +586,7 @@ impl Dyld {
             return Some(f);
         }
 
-        for dylib in bins.iter() {
+        for dylib in &bins[1..] {
             if let Some(&addr) = dylib.exported_symbols.get(symbol) {
                 let (stub_function_ptr, la_symbol_ptr) =
                     link_by_restoring_stub(mem, cpu, addr, svc_pc, info.entry_size);

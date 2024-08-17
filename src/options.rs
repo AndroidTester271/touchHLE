@@ -27,7 +27,6 @@ pub enum Button {
     B,
     X,
     Y,
-    LeftShoulder,
 }
 
 /// Struct containing all user-configurable options.
@@ -127,7 +126,6 @@ impl Options {
                 "B" => Ok(Button::B),
                 "X" => Ok(Button::X),
                 "Y" => Ok(Button::Y),
-                "LeftShoulder" => Ok(Button::LeftShoulder),
                 _ => Err("Invalid button for --button-to-touch=".to_string()),
             }?;
             let x: f32 = x

@@ -12,7 +12,6 @@
 //! Resources:
 //! - [Apple Core Audio Format Specification 1.0](https://developer.apple.com/library/archive/documentation/MusicAudio/Reference/CAFSpec/CAF_intro/CAF_intro.html)
 
-mod aac;
 mod ima4;
 
 pub use ima4::decode_ima4;
@@ -49,7 +48,6 @@ enum AudioFileInner {
     Wave(hound::WavReader<Cursor<Vec<u8>>>),
     Caf(caf::CafPacketReader<Cursor<Vec<u8>>>),
     Mp3(dr_mp3::Mp3DecodedToPcm),
-    Aac(aac::AacDecodedToPcm),
 }
 
 impl AudioFile {
@@ -76,10 +74,6 @@ impl AudioFile {
         // a lot of changes in Audio Toolbox.
         } else if let Ok(pcm) = dr_mp3::decode_mp3_to_pcm(&bytes) {
             Ok(AudioFile(AudioFileInner::Mp3(pcm)))
-        // TODO: Real MP4 container handling for AAC. The situation is the same
-        // as for MP3.
-        } else if let Ok(pcm) = aac::decode_aac_to_pcm(Cursor::new(bytes)) {
-            Ok(AudioFile(AudioFileInner::Aac(pcm)))
         } else {
             log!(
                 "Could not decode audio file at path {:?}, likely an unimplemented file format.",
@@ -159,11 +153,6 @@ impl AudioFile {
                 sample_rate,
                 channels,
                 ..
-            })
-            | AudioFileInner::Aac(aac::AacDecodedToPcm {
-                sample_rate,
-                channels,
-                ..
             }) => AudioDescription {
                 sample_rate: f64::from(sample_rate),
                 format: AudioFormat::LinearPcm {
@@ -202,16 +191,13 @@ impl AudioFile {
                 // variable size not implemented
                 u64::from(self.packet_size_fixed()) * self.packet_count()
             }
-            AudioFileInner::Mp3(dr_mp3::Mp3DecodedToPcm { ref bytes, .. })
-            | AudioFileInner::Aac(aac::AacDecodedToPcm { ref bytes, .. }) => bytes.len() as u64,
+            AudioFileInner::Mp3(dr_mp3::Mp3DecodedToPcm { ref bytes, .. }) => bytes.len() as u64,
         }
     }
 
     pub fn packet_count(&self) -> u64 {
         match self.0 {
-            AudioFileInner::Wave(_)
-            | AudioFileInner::Mp3(dr_mp3::Mp3DecodedToPcm { .. })
-            | AudioFileInner::Aac(aac::AacDecodedToPcm { .. }) => {
+            AudioFileInner::Wave(_) | AudioFileInner::Mp3(dr_mp3::Mp3DecodedToPcm { .. }) => {
                 // never variable-size
                 self.byte_count() / u64::from(self.packet_size_fixed())
             }
@@ -251,11 +237,8 @@ impl AudioFile {
                     unreachable!()
                 };
 
-                let channels: u64 = wave_reader.spec().channels.into();
-                // WavReader expects number of samples which are
-                // independent of the number of channels here
                 wave_reader
-                    .seek((offset / (bytes_per_sample * channels)).try_into().unwrap())
+                    .seek((offset / bytes_per_sample).try_into().unwrap())
                     .map_err(|_| ())?;
 
                 let mut byte_offset = 0;
@@ -304,8 +287,7 @@ impl AudioFile {
                 }
                 Ok(byte_offset)
             }
-            AudioFileInner::Mp3(dr_mp3::Mp3DecodedToPcm { ref bytes, .. })
-            | AudioFileInner::Aac(aac::AacDecodedToPcm { ref bytes, .. }) => {
+            AudioFileInner::Mp3(dr_mp3::Mp3DecodedToPcm { ref bytes, .. }) => {
                 let bytes = bytes.get(offset as usize..).ok_or(())?;
                 let bytes_to_read = buffer.len().min(bytes.len());
                 let bytes = &bytes[..bytes_to_read];

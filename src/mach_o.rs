@@ -348,6 +348,7 @@ impl MachO {
                         }
                         "__TEXT" => {
                             assert!(text_segment_base.is_none());
+                            log!("__TEXT {}", vmaddr);
                             text_segment_base = Some(vmaddr);
                             true
                         }
