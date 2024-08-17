@@ -2,7 +2,7 @@ name: Build touchHLE
 
 on:
   push:
-    branches: [ "tmp-fifa10-world-cup" ]
+    branches: [ "tmp-bod" ]
   pull_request:
     branches: [ "trunk" ]
 
