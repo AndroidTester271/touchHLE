@@ -10,9 +10,6 @@ use crate::bundle::Bundle;
 use crate::frameworks::core_foundation::cf_bundle::{
     CFBundleCopyBundleLocalizations, CFBundleCopyPreferredLocalizationsFromArray,
 };
-use crate::frameworks::foundation::ns_string::{from_rust_string, get_static_str, to_rust_string};
-use crate::frameworks::uikit::ui_nib::load_nib_file;
-use crate::fs::GuestPathBuf;
 use crate::objc::{
     autorelease, id, msg, msg_class, nil, objc_classes, release, ClassExports, HostObject,
 };
@@ -117,23 +114,6 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
 }
 
-- (id)loadNibNamed:(id)name // NSString*
-             owner:(id)_owner
-           options:(id)options { // NSDictionary<UINibOptionsKey, id> *
-    if !options.is_null() {
-        let options_count: NSUInteger = msg![env; options count];
-        assert!(options_count == 0);
-    }
-    let name_string = to_rust_string(env, name);
-    let bundle_path = to_rust_string(env, env.objc.borrow::<NSBundleHostObject>(this).bundle_path);
-    let nib_path = format!("{}/{}.nib", bundle_path, name_string);
-    let unarchiver = load_nib_file(env, GuestPathBuf::from(nib_path)).unwrap(); // TODO: Set owner and use options
-    let top_level_objects_key = get_static_str(env, "UINibTopLevelObjectsKey");
-    let top_level_objects = msg![env; unarchiver decodeObjectForKey:top_level_objects_key];
-    release(env, unarchiver);
-    top_level_objects
-}
-
 - (id)resourcePath {
     // This seems to be the same as the bundle path. The iPhone OS bundle
     // structure is a lot flatter than the macOS one.
@@ -143,12 +123,6 @@ pub const CLASSES: ClassExports = objc_classes! {
     // This seems to be the same as the bundle path. The iPhone OS bundle
     // structure is a lot flatter than the macOS one.
     msg![env; this bundleURL]
-}
-
-- (id)executablePath {
-    let exec_path_str = env.bundle.executable_path().as_str().to_string();
-    let exec_path = from_rust_string(env, exec_path_str);
-    autorelease(env, exec_path)
 }
 
 - (id)pathForResource:(id)name // NSString*

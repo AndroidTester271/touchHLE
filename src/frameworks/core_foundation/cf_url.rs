@@ -11,7 +11,6 @@
 use super::cf_allocator::{kCFAllocatorDefault, CFAllocatorRef};
 use super::CFIndex;
 use crate::dyld::{export_c_func, FunctionExports};
-use crate::frameworks::core_foundation::cf_string::CFStringRef;
 use crate::frameworks::foundation::ns_string::{to_rust_string, NSUTF8StringEncoding};
 use crate::frameworks::foundation::NSUInteger;
 use crate::mem::{ConstPtr, MutPtr};
@@ -19,13 +18,6 @@ use crate::objc::{id, msg, msg_class};
 use crate::Environment;
 
 pub type CFURLRef = super::CFTypeRef;
-
-type CFURLPathStyle = CFIndex;
-const kCFURLPOSIXPathStyle: CFURLPathStyle = 0;
-#[allow(dead_code)]
-const kCFURLHFSPathStyle: CFURLPathStyle = 1;
-#[allow(dead_code)]
-const kCFURLWindowsPathStyle: CFURLPathStyle = 2;
 
 pub fn CFURLGetFileSystemRepresentation(
     env: &mut Environment,
@@ -69,25 +61,7 @@ pub fn CFURLCreateFromFileSystemRepresentation(
     msg![env; url initFileURLWithPath:string isDirectory:is_directory]
 }
 
-pub fn CFURLCopyPathExtension(env: &mut Environment, url: CFURLRef) -> CFStringRef {
-    let path = msg![env; url path];
-    let ext = msg![env; path pathExtension];
-    msg![env; ext copy]
-}
-
-fn CFURLCopyFileSystemPath(
-    env: &mut Environment,
-    url: CFURLRef,
-    style: CFURLPathStyle,
-) -> CFStringRef {
-    assert_eq!(style, kCFURLPOSIXPathStyle);
-    let path: CFStringRef = msg![env; url path];
-    msg![env; path copy]
-}
-
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFURLGetFileSystemRepresentation(_, _, _, _)),
     export_c_func!(CFURLCreateFromFileSystemRepresentation(_, _, _, _)),
-    export_c_func!(CFURLCopyPathExtension(_)),
-    export_c_func!(CFURLCopyFileSystemPath(_, _)),
 ];

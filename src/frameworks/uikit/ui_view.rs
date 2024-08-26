@@ -20,9 +20,10 @@ use crate::frameworks::core_graphics::cg_context::{CGContextClearRect, CGContext
 use crate::frameworks::core_graphics::{CGFloat, CGPoint, CGRect};
 use crate::frameworks::foundation::ns_string::get_static_str;
 use crate::frameworks::foundation::{ns_array, NSInteger, NSUInteger};
+use crate::mem::MutVoidPtr;
 use crate::objc::{
     autorelease, id, msg, nil, objc_classes, release, retain, Class, ClassExports, HostObject,
-    NSZonePtr,
+    NSZonePtr, SEL,
 };
 use crate::Environment;
 
@@ -94,6 +95,20 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 + (Class)layerClass {
     env.objc.get_known_class("CALayer", &mut env.mem)
+}
+
++ (())beginAnimations:(id)animId
+              context:(MutVoidPtr)context {
+    log!("WARNING: Ignoring beginAnimations:context:");
+}
++ (())setAnimationDelegate:(id)delegate {
+    log!("WARNING: Ignoring setAnimationDelegate:");
+}
++ (())setAnimationDidStopSelector:(SEL)selector {
+    log!("WARNING: Ignoring setAnimationDidStopSelector:");
+}
++ (())commitAnimations {
+    log!("WARNING: Ignoring commitAnimations");
 }
 
 // TODO: accessors etc
@@ -433,26 +448,6 @@ pub const CLASSES: ClassExports = objc_classes! {
         }
     }
     this
-}
-
-// Ending a view-editing session
-
-- (bool)endEditing:(bool)force {
-    assert!(force);
-    let responder: id = env.framework_state.uikit.ui_responder.first_responder;
-    let class = msg![env; responder class];
-    let ui_text_field_class = env.objc.get_known_class("UITextField", &mut env.mem);
-    if responder != nil && env.objc.class_is_subclass_of(class, ui_text_field_class) {
-        // we need to check if text field is in the current view hierarchy
-        let mut to_find = responder;
-        while to_find != nil {
-            if to_find == this {
-                return msg![env; responder resignFirstResponder];
-            }
-            to_find = msg![env; to_find superview];
-        }
-    }
-    false
 }
 
 // Co-ordinate space conversion

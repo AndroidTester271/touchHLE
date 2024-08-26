@@ -22,12 +22,10 @@ pub enum Button {
     DPadUp,
     DPadRight,
     DPadDown,
-    Start,
     A,
     B,
     X,
     Y,
-    LeftShoulder,
 }
 
 /// Struct containing all user-configurable options.
@@ -122,12 +120,10 @@ impl Options {
                 "DPadUp" => Ok(Button::DPadUp),
                 "DPadRight" => Ok(Button::DPadRight),
                 "DPadDown" => Ok(Button::DPadDown),
-                "Start" => Ok(Button::Start),
                 "A" => Ok(Button::A),
                 "B" => Ok(Button::B),
                 "X" => Ok(Button::X),
                 "Y" => Ok(Button::Y),
-                "LeftShoulder" => Ok(Button::LeftShoulder),
                 _ => Err("Invalid button for --button-to-touch=".to_string()),
             }?;
             let x: f32 = x

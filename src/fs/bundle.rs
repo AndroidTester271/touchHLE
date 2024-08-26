@@ -204,12 +204,6 @@ pub struct IpaFileRef {
 
 impl IpaFileRef {
     pub fn open(&self) -> IpaFile {
-        // Some games, like THPS2, use a single resource bundle file which is
-        // opened each time a new game resource is being read.
-        // As IPA is basically an archive, this pattern requires unzipping to be
-        // done each time, which is extremely slow.
-        // The solution here is to cache unzipped data in memory, which should
-        // be OK as early iOS IPA files are relatively small in size.
         let mut archive_cache = (*self.archive_cursor_cache).borrow_mut();
         archive_cache.entry(self.index).or_insert_with(|| {
             let mut archive = (*self.archive).borrow_mut();

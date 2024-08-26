@@ -76,7 +76,12 @@ fn access(env: &mut Environment, path: ConstPtr<u8>, mode: i32) -> i32 {
     }
 }
 
+fn getpagesize(env: &mut Environment) -> i32 {
+    4096
+}
+
 pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(getpagesize()),
     export_c_func!(sleep(_)),
     export_c_func!(usleep(_)),
     export_c_func!(getpid()),

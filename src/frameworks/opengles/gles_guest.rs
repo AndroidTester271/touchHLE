@@ -15,8 +15,9 @@
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::gles::gles11_raw as gles11; // constants only
 use crate::gles::GLES;
-use crate::mem::{ConstPtr, ConstVoidPtr, GuestISize, GuestUSize, Mem, MutPtr, Ptr};
+use crate::mem::{ConstPtr, ConstVoidPtr, GuestISize, GuestUSize, Mem, MutPtr};
 use crate::Environment;
+use core::ffi::CStr;
 
 // These types are the same size in guest code (32-bit) and host code (64-bit).
 use crate::gles::gles11_raw::types::{
@@ -123,18 +124,10 @@ fn glGetIntegerv(env: &mut Environment, pname: GLenum, params: MutPtr<GLint>) {
         unsafe { gles.GetIntegerv(pname, params) };
     });
 }
-fn glGetPointerv(env: &mut Environment, pname: GLenum, params: MutPtr<ConstVoidPtr>) {
-    use crate::gles::gles1_on_gl2::{ArrayInfo, ARRAYS};
-    let &ArrayInfo { buffer_binding, .. } =
-        ARRAYS.iter().find(|info| info.pointer == pname).unwrap();
+fn glGetTexEnvfv(env: &mut Environment, target: GLenum, pname: GLenum, params: MutPtr<GLfloat>) {
     with_ctx_and_mem(env, |gles, mem| {
-        // params always points to just one pointer for this function
-        let mut host_pointer_or_offset = std::ptr::null();
-        let guest_pointer_or_offset = unsafe {
-            gles.GetPointerv(pname, &mut host_pointer_or_offset);
-            translate_pointer_or_offset_to_guest(gles, mem, host_pointer_or_offset, buffer_binding)
-        };
-        mem.write(params, guest_pointer_or_offset);
+        let params = mem.ptr_at_mut(params, 16 /* upper bound */);
+        unsafe { gles.GetTexEnvfv(target, pname, params) };
     });
 }
 fn glGetTexEnviv(env: &mut Environment, target: GLenum, pname: GLenum, params: MutPtr<GLint>) {
@@ -153,24 +146,27 @@ fn glGetString(env: &mut Environment, name: GLenum) -> ConstPtr<GLubyte> {
     let res = if let Some(&str) = env.framework_state.opengles.strings_cache.get(&name) {
         str
     } else {
-        let new_str = with_ctx_and_mem(env, |_gles, mem| {
+        let new_str = with_ctx_and_mem(env, |gles, mem| {
             // Those values are extracted from the iPod touch 2nd gen, iOS 4.2.1
-            let s: &[u8] = match name {
+            match name {
                 gles11::VENDOR => {
-                    b"Imagination Technologies"
+                    let s = b"Imagination Technologies";
+                    mem.alloc_and_write_cstr(s).cast_const()
                 }
                 gles11::RENDERER => {
-                    b"PowerVR MBXLite with VGPLite"
+                    let s = b"PowerVR MBXLite with VGPLite";
+                    mem.alloc_and_write_cstr(s).cast_const()
                 }
                 gles11::VERSION => {
-                    b"OpenGL ES-CM 1.1 (76)"
+                    let s = b"OpenGL ES-CM 1.1 (76)";
+                    mem.alloc_and_write_cstr(s).cast_const()
                 }
                 gles11::EXTENSIONS => {
-                    b"GL_APPLE_framebuffer_multisample GL_APPLE_texture_max_level GL_EXT_discard_framebuffer GL_EXT_texture_filter_anisotropic GL_EXT_texture_lod_bias GL_IMG_read_format GL_IMG_texture_compression_pvrtc GL_IMG_texture_format_BGRA8888 GL_OES_blend_subtract GL_OES_compressed_paletted_texture GL_OES_depth24 GL_OES_draw_texture GL_OES_framebuffer_object GL_OES_mapbuffer GL_OES_matrix_palette GL_OES_point_size_array GL_OES_point_sprite GL_OES_read_format GL_OES_rgb8_rgba8 GL_OES_texture_mirrored_repeat GL_OES_vertex_array_object "
+                    let s = b"GL_APPLE_framebuffer_multisample GL_APPLE_texture_max_level GL_EXT_discard_framebuffer GL_EXT_texture_filter_anisotropic GL_EXT_texture_lod_bias GL_IMG_read_format GL_IMG_texture_compression_pvrtc GL_IMG_texture_format_BGRA8888 GL_OES_blend_subtract GL_OES_compressed_paletted_texture GL_OES_depth24 GL_OES_draw_texture GL_OES_framebuffer_object GL_OES_mapbuffer GL_OES_matrix_palette GL_OES_point_size_array GL_OES_point_sprite GL_OES_read_format GL_OES_rgb8_rgba8 GL_OES_texture_mirrored_repeat GL_OES_vertex_array_object ";
+                    mem.alloc_and_write_cstr(s).cast_const()
                 }
                 _ => unreachable!(),
-            };
-            mem.alloc_and_write_cstr(s).cast_const()
+            }
         });
         env.framework_state
             .opengles
@@ -256,40 +252,12 @@ fn glViewport(env: &mut Environment, x: GLint, y: GLint, width: GLsizei, height:
         gles.Viewport(x, y, width, height)
     })
 }
+
 fn glLineWidth(env: &mut Environment, val: GLfloat) {
     with_ctx_and_mem(env, |gles, _mem| unsafe { gles.LineWidth(val) })
 }
 fn glLineWidthx(env: &mut Environment, val: GLfixed) {
     with_ctx_and_mem(env, |gles, _mem| unsafe { gles.LineWidthx(val) })
-}
-// Points
-fn glPointSize(env: &mut Environment, size: GLfloat) {
-    with_ctx_and_mem(env, |gles, _mem| unsafe { gles.PointSize(size) })
-}
-fn glPointSizex(env: &mut Environment, size: GLfixed) {
-    with_ctx_and_mem(env, |gles, _mem| unsafe { gles.PointSizex(size) })
-}
-fn glPointParameterf(env: &mut Environment, pname: GLenum, param: GLfloat) {
-    with_ctx_and_mem(env, |gles, _mem| unsafe {
-        gles.PointParameterf(pname, param)
-    })
-}
-fn glPointParameterx(env: &mut Environment, pname: GLenum, param: GLfixed) {
-    with_ctx_and_mem(env, |gles, _mem| unsafe {
-        gles.PointParameterx(pname, param)
-    })
-}
-fn glPointParameterfv(env: &mut Environment, pname: GLenum, params: ConstPtr<GLfloat>) {
-    with_ctx_and_mem(env, |gles, mem| {
-        let params = mem.ptr_at(params, 4 /* upper bound */);
-        unsafe { gles.PointParameterfv(pname, params) }
-    })
-}
-fn glPointParameterxv(env: &mut Environment, pname: GLenum, params: ConstPtr<GLfixed>) {
-    with_ctx_and_mem(env, |gles, mem| {
-        let params = mem.ptr_at(params, 4 /* upper bound */);
-        unsafe { gles.PointParameterxv(pname, params) }
-    })
 }
 
 // Lighting and materials
@@ -331,15 +299,6 @@ fn glLightxv(env: &mut Environment, light: GLenum, pname: GLenum, params: ConstP
     with_ctx_and_mem(env, |gles, mem| {
         let params = mem.ptr_at(params, 4 /* upper bound */);
         unsafe { gles.Lightxv(light, pname, params) }
-    })
-}
-fn glLightModelf(env: &mut Environment, pname: GLenum, param: GLfloat) {
-    with_ctx_and_mem(env, |gles, _mem| unsafe { gles.LightModelf(pname, param) })
-}
-fn glLightModelfv(env: &mut Environment, pname: GLenum, params: ConstPtr<GLfloat>) {
-    with_ctx_and_mem(env, |gles, mem| {
-        let params = mem.ptr_at(params, 4 /* upper bound */);
-        unsafe { gles.LightModelfv(pname, params) }
     })
 }
 fn glMaterialf(env: &mut Environment, face: GLenum, pname: GLenum, param: GLfloat) {
@@ -444,14 +403,9 @@ fn glNormal3x(env: &mut Environment, nx: GLfixed, ny: GLfixed, nz: GLfixed) {
 
 // Pointers
 
-/// Helper for implementing OpenGL pointer setting functions.
-///
-/// One of the ugliest things in OpenGL is that, depending on dynamic state
-/// (`ARRAY_BUFFER_BINDING` or `ELEMENT_ARRAY_BUFFER_BINDING`), the pointer
-/// parameter of certain functions is either a pointer or an offset!
-///
-/// See also: [translate_pointer_or_offset_to_guest]
-unsafe fn translate_pointer_or_offset_to_host(
+/// One of the ugliest things in OpenGL is that, depending on dynamic state, the
+/// pointer parameter of certain functions is either a pointer or an offset!
+unsafe fn translate_pointer_or_offset(
     gles: &mut dyn GLES,
     mem: &Mem,
     pointer_or_offset: ConstVoidPtr,
@@ -471,33 +425,6 @@ unsafe fn translate_pointer_or_offset_to_host(
     }
 }
 
-/// Helper for implementing OpenGL pointer retrieval.
-///
-/// Reverse of [translate_pointer_or_offset_to_host]. Depending on the value
-/// of `VERTEX_ARRAY_BUFFER_BINDING`/`NORMAL_ARRAY_BUFFER_BINDING`/etc
-/// (not to be confused with `ARRAY_BUFFER_BINDING`, only used when *setting*),
-/// the pointer retrieved with `glGetPointerv` may actually be an offset.
-///
-/// See also: [translate_pointer_or_offset_to_host]
-unsafe fn translate_pointer_or_offset_to_guest(
-    gles: &mut dyn GLES,
-    mem: &Mem,
-    pointer_or_offset: *const GLvoid,
-    which_binding: GLenum,
-) -> ConstVoidPtr {
-    let mut buffer_binding = 0;
-    gles.GetIntegerv(which_binding, &mut buffer_binding);
-    if buffer_binding != 0 {
-        let offset = pointer_or_offset as usize;
-        Ptr::from_bits(u32::try_from(offset).unwrap())
-    } else if pointer_or_offset.is_null() {
-        Ptr::null()
-    } else {
-        let pointer = pointer_or_offset;
-        mem.host_ptr_to_guest_ptr(pointer)
-    }
-}
-
 fn glColorPointer(
     env: &mut Environment,
     size: GLint,
@@ -506,15 +433,13 @@ fn glColorPointer(
     pointer: ConstVoidPtr,
 ) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        let pointer =
-            translate_pointer_or_offset_to_host(gles, mem, pointer, gles11::ARRAY_BUFFER_BINDING);
+        let pointer = translate_pointer_or_offset(gles, mem, pointer, gles11::ARRAY_BUFFER_BINDING);
         gles.ColorPointer(size, type_, stride, pointer)
     })
 }
 fn glNormalPointer(env: &mut Environment, type_: GLenum, stride: GLsizei, pointer: ConstVoidPtr) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        let pointer =
-            translate_pointer_or_offset_to_host(gles, mem, pointer, gles11::ARRAY_BUFFER_BINDING);
+        let pointer = translate_pointer_or_offset(gles, mem, pointer, gles11::ARRAY_BUFFER_BINDING);
         gles.NormalPointer(type_, stride, pointer)
     })
 }
@@ -526,8 +451,7 @@ fn glTexCoordPointer(
     pointer: ConstVoidPtr,
 ) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        let pointer =
-            translate_pointer_or_offset_to_host(gles, mem, pointer, gles11::ARRAY_BUFFER_BINDING);
+        let pointer = translate_pointer_or_offset(gles, mem, pointer, gles11::ARRAY_BUFFER_BINDING);
         gles.TexCoordPointer(size, type_, stride, pointer)
     })
 }
@@ -539,8 +463,7 @@ fn glVertexPointer(
     pointer: ConstVoidPtr,
 ) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        let pointer =
-            translate_pointer_or_offset_to_host(gles, mem, pointer, gles11::ARRAY_BUFFER_BINDING);
+        let pointer = translate_pointer_or_offset(gles, mem, pointer, gles11::ARRAY_BUFFER_BINDING);
         gles.VertexPointer(size, type_, stride, pointer)
     })
 }
@@ -548,9 +471,7 @@ fn glVertexPointer(
 // Drawing
 fn glDrawArrays(env: &mut Environment, mode: GLenum, first: GLint, count: GLsizei) {
     with_ctx_and_mem(env, |gles, _mem| unsafe {
-        let fog_state_backup = clamp_fog_state_values(gles);
-        gles.DrawArrays(mode, first, count);
-        restore_fog_state_values(gles, fog_state_backup);
+        gles.DrawArrays(mode, first, count)
     })
 }
 fn glDrawElements(
@@ -561,15 +482,9 @@ fn glDrawElements(
     indices: ConstVoidPtr,
 ) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        let fog_state_backup = clamp_fog_state_values(gles);
-        let indices = translate_pointer_or_offset_to_host(
-            gles,
-            mem,
-            indices,
-            gles11::ELEMENT_ARRAY_BUFFER_BINDING,
-        );
-        gles.DrawElements(mode, count, type_, indices);
-        restore_fog_state_values(gles, fog_state_backup);
+        let indices =
+            translate_pointer_or_offset(gles, mem, indices, gles11::ELEMENT_ARRAY_BUFFER_BINDING);
+        gles.DrawElements(mode, count, type_, indices)
     })
 }
 
@@ -838,7 +753,6 @@ fn image_size_estimate(pixel_count: GuestUSize, format: GLenum, type_: GLenum) -
             gles11::LUMINANCE_ALPHA => 2,
             gles11::RGB => 3,
             gles11::RGBA => 4,
-            gles11::BGRA_EXT => 4,
             _ => panic!("Unexpected format {:#x}", format),
         },
         gles11::UNSIGNED_SHORT_5_6_5
@@ -1102,35 +1016,6 @@ fn glGenerateMipmapOES(env: &mut Environment, target: GLenum) {
     with_ctx_and_mem(env, |gles, _mem| unsafe { gles.GenerateMipmapOES(target) })
 }
 
-/// If fog is enabled, check if the values for start and end distances
-/// are equal. Apple platforms (even modern Mac OS) seem to handle that
-/// gracefully, however, both Windows and Android have issues in those cases.
-/// This workaround is required so Doom 2 RPG renders correctly.
-/// It prevents divisions by zero in levels where fog is used and both
-/// values are set to 10000.
-unsafe fn clamp_fog_state_values(gles: &mut dyn GLES) -> Option<(f32, f32)> {
-    let mut fogEnabled: GLboolean = 0;
-    gles.GetBooleanv(gles11::FOG, &mut fogEnabled);
-    if fogEnabled != 0 {
-        let mut fogStart: GLfloat = 0.0;
-        let mut fogEnd: GLfloat = 0.0;
-        gles.GetFloatv(gles11::FOG_START, &mut fogStart);
-        gles.GetFloatv(gles11::FOG_END, &mut fogEnd);
-        if fogStart == fogEnd {
-            let newFogStart = fogEnd - 0.001;
-            gles.Fogf(gles11::FOG_START, newFogStart);
-            return Some((fogStart, fogEnd));
-        }
-    }
-    None
-}
-unsafe fn restore_fog_state_values(gles: &mut dyn GLES, from_backup: Option<(f32, f32)>) {
-    if let Some((fogStart, fogEnd)) = from_backup {
-        gles.Fogf(gles11::FOG_START, fogStart);
-        gles.Fogf(gles11::FOG_END, fogEnd);
-    }
-}
-
 pub const FUNCTIONS: FunctionExports = &[
     // Generic state manipulation
     export_c_func!(glGetError()),
@@ -1143,8 +1028,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(glGetBooleanv(_, _)),
     export_c_func!(glGetFloatv(_, _)),
     export_c_func!(glGetIntegerv(_, _)),
-    export_c_func!(glGetPointerv(_, _)),
-    export_c_func!(glGetTexEnviv(_, _, _)),
     export_c_func!(glHint(_, _)),
     export_c_func!(glFlush()),
     export_c_func!(glGetString(_)),
@@ -1166,13 +1049,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(glViewport(_, _, _, _)),
     export_c_func!(glLineWidth(_)),
     export_c_func!(glLineWidthx(_)),
-    // Points
-    export_c_func!(glPointSize(_)),
-    export_c_func!(glPointSizex(_)),
-    export_c_func!(glPointParameterf(_, _)),
-    export_c_func!(glPointParameterx(_, _)),
-    export_c_func!(glPointParameterfv(_, _)),
-    export_c_func!(glPointParameterxv(_, _)),
     // Lighting and materials
     export_c_func!(glFogf(_, _)),
     export_c_func!(glFogx(_, _)),
@@ -1182,8 +1058,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(glLightx(_, _, _)),
     export_c_func!(glLightfv(_, _, _)),
     export_c_func!(glLightxv(_, _, _)),
-    export_c_func!(glLightModelf(_, _)),
-    export_c_func!(glLightModelfv(_, _)),
     export_c_func!(glMaterialf(_, _, _)),
     export_c_func!(glMaterialx(_, _, _)),
     export_c_func!(glMaterialfv(_, _, _)),

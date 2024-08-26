@@ -3,23 +3,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
-//! `CFString` and `CFMutableString`.
+//! `CFString`.
 //!
-//! This is toll-free bridged to `NSString` and `NSMutableString` in
-//! Apple's implementation. Here it is the same type.
+//! This is toll-free bridged to `NSString` in Apple's implementation. Here it
+//! is the same type.
 
 use super::cf_allocator::{kCFAllocatorDefault, CFAllocatorRef};
 use super::cf_dictionary::CFDictionaryRef;
 use crate::abi::{DotDotDot, VaList};
 use crate::dyld::{export_c_func, FunctionExports};
-use crate::frameworks::core_foundation::{kCFNotFound, CFIndex, CFOptionFlags, CFRange};
-use crate::frameworks::foundation::{ns_string, NSNotFound, NSRange, NSUInteger};
-use crate::mem::{ConstPtr, MutPtr};
+use crate::frameworks::core_foundation::{CFIndex, CFOptionFlags};
+use crate::frameworks::foundation::ns_string;
+use crate::mem::ConstPtr;
 use crate::objc::{id, msg, msg_class};
 use crate::Environment;
 
 pub type CFStringRef = super::CFTypeRef;
-pub type CFMutableStringRef = CFStringRef;
 
 pub type CFStringEncoding = u32;
 pub const kCFStringEncodingASCII: CFStringEncoding = 0x600;
@@ -28,20 +27,6 @@ pub const kCFStringEncodingUnicode: CFStringEncoding = 0x100;
 pub const kCFStringEncodingUTF16: CFStringEncoding = kCFStringEncodingUnicode;
 pub const kCFStringEncodingUTF16BE: CFStringEncoding = 0x10000100;
 pub const kCFStringEncodingUTF16LE: CFStringEncoding = 0x14000100;
-
-fn CFStringAppendFormat(
-    env: &mut Environment,
-    string: CFMutableStringRef,
-    // Apple's own docs say these are unimplemented!
-    _format_options: CFDictionaryRef,
-    format: CFStringRef,
-    dots: DotDotDot,
-) {
-    let res = ns_string::with_format(env, format, dots.start());
-    let to_append: id = ns_string::from_rust_string(env, res);
-    msg![env; string appendString:to_append]
-}
-
 fn CFStringConvertEncodingToNSStringEncoding(
     _env: &mut Environment,
     encoding: CFStringEncoding,
@@ -67,17 +52,6 @@ fn CFStringConvertNSStringEncodingToEncoding(
         ns_string::NSUTF16LittleEndianStringEncoding => kCFStringEncodingUTF16LE,
         _ => unimplemented!("Unhandled: NSStringEncoding {:#x}", encoding),
     }
-}
-
-fn CFStringCreateMutable(
-    env: &mut Environment,
-    allocator: CFAllocatorRef,
-    max_length: CFIndex,
-) -> CFMutableStringRef {
-    assert_eq!(allocator, kCFAllocatorDefault); // unimplemented
-    assert_eq!(max_length, 0);
-    let str: id = msg_class![env; NSMutableString alloc];
-    msg![env; str init]
 }
 
 fn CFStringCreateWithCString(
@@ -127,46 +101,11 @@ fn CFStringCompare(
     msg![env; a compare:b options:flags]
 }
 
-fn CFStringGetCString(
-    env: &mut Environment,
-    a: CFStringRef,
-    buffer: MutPtr<u8>,
-    buffer_size: CFIndex,
-    encoding: CFStringEncoding,
-) -> bool {
-    let encoding = CFStringConvertEncodingToNSStringEncoding(env, encoding);
-    let buffer_size = buffer_size as NSUInteger;
-    msg![env; a getCString:buffer maxLength:buffer_size encoding:encoding]
-}
-
-fn CFStringFind(
-    env: &mut Environment,
-    string: CFStringRef,
-    to_find: CFStringRef,
-    options: CFStringCompareFlags,
-) -> CFRange {
-    let range: NSRange = msg![env; string rangeOfString:to_find options:options];
-    let location: CFIndex = if range.location == NSNotFound as NSUInteger {
-        // NSNotFound and kCFNotFound are not the same!
-        kCFNotFound
-    } else {
-        range.location.try_into().unwrap()
-    };
-    CFRange {
-        location,
-        length: range.length.try_into().unwrap(),
-    }
-}
-
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(CFStringAppendFormat(_, _, _, _)),
     export_c_func!(CFStringConvertEncodingToNSStringEncoding(_)),
     export_c_func!(CFStringConvertNSStringEncodingToEncoding(_)),
-    export_c_func!(CFStringCreateMutable(_, _)),
     export_c_func!(CFStringCreateWithCString(_, _, _)),
     export_c_func!(CFStringCreateWithFormat(_, _, _, _)),
     export_c_func!(CFStringCreateWithFormatAndArguments(_, _, _, _)),
     export_c_func!(CFStringCompare(_, _, _)),
-    export_c_func!(CFStringGetCString(_, _, _, _)),
-    export_c_func!(CFStringFind(_, _, _)),
 ];

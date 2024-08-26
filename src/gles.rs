@@ -44,16 +44,12 @@
 //!   - [OES_framebuffer_object](https://registry.khronos.org/OpenGL/extensions/OES/OES_framebuffer_object.txt)
 //!   - [IMG_texture_compression_pvrtc](https://registry.khronos.org/OpenGL/extensions/IMG/IMG_texture_compression_pvrtc.txt)
 //!   - [OES_compressed_paletted_texture](https://registry.khronos.org/OpenGL/extensions/OES/OES_compressed_paletted_texture.txt) (also incorporated into the main spec)
-//!   - [OES_matrix_palette](https://registry.khronos.org/OpenGL/extensions/OES/OES_matrix_palette.txt)
-//!   - [EXT_texture_format_BGRA8888](https://registry.khronos.org/OpenGL/extensions/EXT/EXT_texture_format_BGRA8888.txt)
 //!
 //! Useful resources for OpenGL 2.1:
 //! - [Reference pages](https://registry.khronos.org/OpenGL-Refpages/gl2.1/)
 //! - [Specification](https://registry.khronos.org/OpenGL/specs/gl/glspec21.pdf)
 //! - Extensions:
 //!   - [EXT_framebuffer_object](https://registry.khronos.org/OpenGL/extensions/EXT/EXT_framebuffer_object.txt)
-//!   - [ARB_matrix_palette](https://registry.khronos.org/OpenGL/extensions/ARB/ARB_matrix_palette.txt)
-//!   - [ARB_vertex_blend](https://registry.khronos.org/OpenGL/extensions/ARB/ARB_vertex_blend.txt)
 //!
 //! Useful resources for both:
 //! - Extensions:
@@ -64,7 +60,7 @@ pub mod gles1_native;
 pub mod gles1_on_gl2;
 mod gles_generic;
 pub mod present;
-mod util;
+pub mod util;
 
 use touchHLE_gl_bindings::gl21compat as gl21compat_raw;
 pub use touchHLE_gl_bindings::gles11 as gles11_raw;
@@ -83,7 +79,7 @@ pub enum GLESImplementation {
 }
 impl GLESImplementation {
     /// List of OpenGL ES 1.1 implementations in order of preference.
-    pub const GLES1_IMPLEMENTATIONS: &'static [Self] = &[Self::GLES1Native, Self::GLES1OnGL2];
+    pub const GLES1_IMPLEMENTATIONS: &[Self] = &[Self::GLES1Native, Self::GLES1OnGL2];
     /// Convert from short name used for command-line arguments. Returns [Err]
     /// if name is not recognized..
     pub fn from_short_name(name: &str) -> Result<Self, ()> {

@@ -14,6 +14,7 @@ use crate::objc::nil;
 use crate::{impl_GuestRet_for_large_struct, Environment};
 use std::ops::Add;
 use std::time::{Duration, SystemTime};
+use crate::libc::mach_time::mach_absolute_time;
 
 /// The absolute reference date is 1 Jan 2001 00:00:00 GMT
 pub fn apple_epoch() -> SystemTime {
@@ -43,6 +44,10 @@ fn CFAbsoluteTimeGetCurrent(_env: &mut Environment) -> CFAbsoluteTime {
         .duration_since(apple_epoch())
         .unwrap()
         .as_secs_f64()
+}
+
+fn CACurrentMediaTime(env: &mut Environment) -> CFAbsoluteTime {
+    mach_absolute_time(env) as CFAbsoluteTime
 }
 
 type CFTimeZoneRef = CFTypeRef;
@@ -77,6 +82,7 @@ pub fn CFAbsoluteTimeGetGregorianDate(
 
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFAbsoluteTimeGetCurrent()),
+    export_c_func!(CACurrentMediaTime()),
     export_c_func!(CFTimeZoneCopySystem()),
     export_c_func!(CFAbsoluteTimeGetGregorianDate(_, _)),
 ];

@@ -32,7 +32,7 @@ use crate::objc::{nil, ObjC};
 use crate::Environment;
 use std::collections::HashMap;
 
-pub type HostFunction = &'static dyn CallFromGuest;
+type HostFunction = &'static dyn CallFromGuest;
 
 /// Type for lists of functions exported by host implementations of frameworks.
 ///
@@ -89,20 +89,6 @@ macro_rules! export_c_func {
     };
 }
 pub use crate::export_c_func; // #[macro_export] is weird...
-
-/// Other variant of [export_c_func] macro, allowing to define an alias
-/// for the exporting function. This is useful then alias may contain
-/// characters not normally allowed for Rust function's names. (e.g. `$`)
-#[macro_export]
-macro_rules! export_c_func_aliased {
-    ($alias:literal, $name:ident ($($_:ty),*)) => {
-        (
-            concat!("_", $alias),
-            &($name as fn(&mut $crate::Environment, $($_),*) -> _)
-        )
-    };
-}
-pub use crate::export_c_func_aliased; // #[macro_export] is weird...
 
 /// Type for describing a constant (C `extern const` symbol) that will be
 /// created by the linker if the guest app references it. See [ConstantExports].
@@ -176,7 +162,6 @@ pub struct Dyld {
     return_to_host_routine: Option<GuestFunction>,
     thread_exit_routine: Option<GuestFunction>,
     constants_to_link_later: Vec<(MutPtr<ConstVoidPtr>, &'static HostConstant)>,
-    non_lazy_host_functions: HashMap<&'static str, GuestFunction>,
 }
 
 impl Dyld {
@@ -199,7 +184,6 @@ impl Dyld {
             return_to_host_routine: None,
             thread_exit_routine: None,
             constants_to_link_later: Vec::new(),
-            non_lazy_host_functions: HashMap::new(),
         }
     }
 
@@ -391,24 +375,6 @@ impl Dyld {
                 }
             }
 
-            if let Some((symbol, _)) = search_lists(function_lists::FUNCTION_LISTS, symbol) {
-                // We want the same symbol name to always point to the same
-                // function. It could point to a specific stub entry, but it's
-                // easier to just create a new function and point all the stub
-                // entries to it.
-                let trampoline_ptr = self
-                    .create_proc_address_no_inval(mem, symbol)
-                    .unwrap()
-                    .to_ptr();
-                mem.write(ptr_ptr, trampoline_ptr);
-                log_dbg!(
-                    "Linked non-lazy host function {} at {:?}",
-                    symbol,
-                    trampoline_ptr
-                );
-                log_dbg!("{:?}", self.non_lazy_host_functions);
-                continue;
-            }
             if let Some((_, template)) = search_lists(constant_lists::CONSTANT_LISTS, symbol) {
                 // Delay linking of constant until we have a `&mut Environment`,
                 // that makes it much easier to build NSString objects etc.
@@ -485,45 +451,6 @@ impl Dyld {
         cpu: &mut Cpu,
         svc_pc: u32,
     ) -> Option<HostFunction> {
-        // Links by restoring the original stub function, then updating
-        // __la_symbol_ptr to the appropriate function.
-        fn link_by_restoring_stub(
-            mem: &mut Mem,
-            cpu: &mut Cpu,
-            linked_function: u32,
-            svc_pc: u32,
-            entry_size: u32,
-        ) -> (MutPtr<u32>, MutPtr<u32>) {
-            let original_instructions = match entry_size {
-                12 => Dyld::SYMBOL_STUB_INSTRUCTIONS.as_slice(),
-                16 => Dyld::PIC_SYMBOL_STUB_INSTRUCTIONS.as_slice(),
-                _ => unreachable!(),
-            };
-            let instruction_count: GuestUSize = original_instructions.len().try_into().unwrap();
-
-            // Restore the original stub, which calls the __la_symbol_ptr
-            let stub_function_ptr: MutPtr<u32> = Ptr::from_bits(svc_pc);
-            for (i, &instr) in original_instructions.iter().enumerate() {
-                mem.write(stub_function_ptr + i.try_into().unwrap(), instr)
-            }
-
-            cpu.invalidate_cache_range(stub_function_ptr.to_bits(), instruction_count * 4);
-
-            // Update the __la_symbol_ptr
-            let la_symbol_ptr: MutPtr<u32> = if entry_size == 12 {
-                // Normal stub: absolute address
-                let addr = mem.read(stub_function_ptr + instruction_count);
-                Ptr::from_bits(addr)
-            } else {
-                // The PIC (position-independent code) stub uses a
-                // PC-relative offset rather than an absolute address.
-                let offset = mem.read(stub_function_ptr + instruction_count);
-                Ptr::from_bits(stub_function_ptr.to_bits() + offset + 12)
-            };
-            mem.write(la_symbol_ptr, linked_function);
-            (stub_function_ptr, la_symbol_ptr)
-        }
-
         let stubs = bins
             .iter()
             .flat_map(|bin| bin.get_section(SectionType::SymbolStubs))
@@ -537,28 +464,6 @@ impl Dyld {
         let idx = (offset / info.entry_size) as usize;
 
         let symbol = info.indirect_undef_symbols[idx].as_deref().unwrap();
-
-        if let Some(&addr) = self.non_lazy_host_functions.get(symbol) {
-            // The host function was already linked non-lazily, point the
-            // stub and __la_symbol_ptr to the function.
-            let (stub_function_ptr, la_symbol_ptr) = link_by_restoring_stub(
-                mem,
-                cpu,
-                addr.addr_with_thumb_bit(),
-                svc_pc,
-                info.entry_size,
-            );
-            log_dbg!(
-                "Linked host function {} at {:?}/{:?} to existing stub ({:?}).",
-                symbol,
-                stub_function_ptr,
-                la_symbol_ptr,
-                addr,
-            );
-            // The stub jumps to the non-lazy function, which calls the
-            // host function.
-            return None;
-        }
 
         if let Some(&(symbol, f)) = search_lists(function_lists::FUNCTION_LISTS, symbol) {
             // Allocate an SVC ID for this host function
@@ -584,10 +489,36 @@ impl Dyld {
             return Some(f);
         }
 
-        for dylib in bins.iter() {
+        for dylib in &bins[1..] {
             if let Some(&addr) = dylib.exported_symbols.get(symbol) {
-                let (stub_function_ptr, la_symbol_ptr) =
-                    link_by_restoring_stub(mem, cpu, addr, svc_pc, info.entry_size);
+                let original_instructions = match info.entry_size {
+                    12 => Self::SYMBOL_STUB_INSTRUCTIONS.as_slice(),
+                    16 => Self::PIC_SYMBOL_STUB_INSTRUCTIONS.as_slice(),
+                    _ => unreachable!(),
+                };
+                let instruction_count: GuestUSize = original_instructions.len().try_into().unwrap();
+
+                // Restore the original stub, which calls the __la_symbol_ptr
+                let stub_function_ptr: MutPtr<u32> = Ptr::from_bits(svc_pc);
+                for (i, &instr) in original_instructions.iter().enumerate() {
+                    mem.write(stub_function_ptr + i.try_into().unwrap(), instr)
+                }
+
+                cpu.invalidate_cache_range(stub_function_ptr.to_bits(), instruction_count * 4);
+
+                // Update the __la_symbol_ptr
+                let la_symbol_ptr: MutPtr<u32> = if info.entry_size == 12 {
+                    // Normal stub: absolute address
+                    let addr = mem.read(stub_function_ptr + instruction_count);
+                    Ptr::from_bits(addr)
+                } else {
+                    // The PIC (position-independent code) stub uses a
+                    // PC-relative offset rather than an absolute address.
+                    let offset = mem.read(stub_function_ptr + instruction_count);
+                    Ptr::from_bits(stub_function_ptr.to_bits() + offset + 12)
+                };
+                mem.write(la_symbol_ptr, addr);
+
                 log_dbg!(
                     "Linked {} at {:?}/{:?} to {:#x} from {}",
                     symbol,
@@ -596,6 +527,7 @@ impl Dyld {
                     addr,
                     dylib.name
                 );
+
                 // Tell the caller it needs to restart execution at svc_pc.
                 return None;
             }
@@ -617,35 +549,8 @@ impl Dyld {
         cpu: &mut Cpu,
         symbol: &str,
     ) -> Result<GuestFunction, ()> {
-        let function_ptr = self.create_proc_address_no_inval(mem, symbol)?;
-
-        // Just in case
-        cpu.invalidate_cache_range(function_ptr.addr_without_thumb_bit(), 8);
-        Ok(function_ptr)
-    }
-
-    /// Internal [Self::create_proc_address] that doesn't invalidate the cache.
-    /// For use before a [Cpu] is available.
-    fn create_proc_address_no_inval(
-        &mut self,
-        mem: &mut Mem,
-        symbol: &str,
-    ) -> Result<GuestFunction, ()> {
         let &(symbol, f) = search_lists(function_lists::FUNCTION_LISTS, symbol).ok_or(())?;
-        if let Some(&cached_fn) = self.non_lazy_host_functions.get(symbol) {
-            return Ok(cached_fn);
-        }
-        let function_ptr = self.create_guest_function(mem, symbol, f);
-        self.non_lazy_host_functions.insert(symbol, function_ptr);
-        Ok(function_ptr)
-    }
 
-    pub fn create_guest_function(
-        &mut self,
-        mem: &mut Mem,
-        symbol: &'static str,
-        f: HostFunction,
-    ) -> GuestFunction {
         // Allocate an SVC ID for this host function
         let idx: u32 = self.linked_host_functions.len().try_into().unwrap();
         let svc = idx + Self::SVC_LINKED_FUNCTIONS_BASE;
@@ -657,6 +562,44 @@ impl Dyld {
         mem.write(function_ptr + 0, encode_a32_svc(svc));
         mem.write(function_ptr + 1, encode_a32_ret());
 
-        GuestFunction::from_addr_with_thumb_bit(function_ptr.to_bits())
+        // Just in case
+        cpu.invalidate_cache_range(function_ptr.to_bits(), 4);
+
+        Ok(GuestFunction::from_addr_with_thumb_bit(
+            function_ptr.to_bits(),
+        ))
+    }
+
+    /// Same as `create_proc_address`, but used for internal touchHLE needs.
+    /// For example, to create an invocation function for NSThread
+    /// implementation.
+    ///
+    /// The name must be the mangled symbol name. Returns [Err] if there's no
+    /// such function in a list of private functions.
+    pub fn create_private_proc_address(
+        &mut self,
+        mem: &mut Mem,
+        cpu: &mut Cpu,
+        symbol: &str,
+    ) -> Result<GuestFunction, ()> {
+        let &(symbol, f) = search_lists(function_lists::PRIVATE_FUNCTION_LISTS, symbol).ok_or(())?;
+
+        // Allocate an SVC ID for this host function
+        let idx: u32 = self.linked_host_functions.len().try_into().unwrap();
+        let svc = idx + Self::SVC_LINKED_FUNCTIONS_BASE;
+        self.linked_host_functions.push((symbol, f));
+
+        // Create guest function to call this host function
+        let function_ptr = mem.alloc(8);
+        let function_ptr: MutPtr<u32> = function_ptr.cast();
+        mem.write(function_ptr + 0, encode_a32_svc(svc));
+        mem.write(function_ptr + 1, encode_a32_ret());
+
+        // Just in case
+        cpu.invalidate_cache_range(function_ptr.to_bits(), 4);
+
+        Ok(GuestFunction::from_addr_with_thumb_bit(
+            function_ptr.to_bits(),
+        ))
     }
 }

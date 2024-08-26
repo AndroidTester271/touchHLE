@@ -5,9 +5,9 @@
  */
 //! `NSURL`.
 
-use super::ns_string::{from_rust_string, to_rust_string, NSUTF8StringEncoding};
+use super::ns_string::{to_rust_string, NSUTF8StringEncoding};
 use super::NSUInteger;
-use crate::fs::{GuestPath, GuestPathBuf};
+use crate::fs::GuestPath;
 use crate::mem::MutPtr;
 use crate::objc::{
     autorelease, id, msg, nil, objc_classes, release, retain, ClassExports, HostObject, NSZonePtr,
@@ -22,12 +22,7 @@ enum NSURLHostObject {
     ///
     /// This is a wrapper around NSString so that conversions between NSURL
     /// and NSString, which happen often, can be simple and efficient.
-    FileURL {
-        ns_string: id,
-        // Relative file URL save the working directory at the time of creation
-        // At the moment, used in the description selector.
-        working_directory: GuestPathBuf,
-    },
+    FileURL { ns_string: id },
     /// Non-file URL.
     OtherURL { ns_string: id },
 }
@@ -40,7 +35,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 @implementation NSURL: NSObject
 
 + (id)allocWithZone:(NSZonePtr)_zone {
-    let host_object = NSURLHostObject::FileURL { ns_string: nil, working_directory: env.fs.working_directory().into() };
+    let host_object = NSURLHostObject::FileURL { ns_string: nil };
     env.objc.alloc_object(this, Box::new(host_object), &mut env.mem)
 }
 
@@ -65,7 +60,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())dealloc {
     match *env.objc.borrow(this) {
-        NSURLHostObject::FileURL { ns_string, .. } => release(env, ns_string),
+        NSURLHostObject::FileURL { ns_string } => release(env, ns_string),
         NSURLHostObject::OtherURL { ns_string } => release(env, ns_string),
     }
     env.objc.dealloc_object(this, &mut env.mem)
@@ -87,15 +82,11 @@ pub const CLASSES: ClassExports = objc_classes! {
     // TODO: this does not strip the file:/// prefix!
     assert!(!to_rust_string(env, path).starts_with("file:"));
     let path: id = msg![env; path copy];
-    *env.objc.borrow_mut(this) = NSURLHostObject::FileURL { ns_string: path, working_directory: env.fs.working_directory().into() };
+    *env.objc.borrow_mut(this) = NSURLHostObject::FileURL { ns_string: path };
     this
 }
 
 - (id)initWithString:(id)url { // NSString*
-    if url == nil {
-        return nil;
-    }
-
     // FIXME: this should parse the URL
     assert!(!to_rust_string(env, url).starts_with("file:")); // TODO
     let url: id = msg![env; url copy];
@@ -103,23 +94,9 @@ pub const CLASSES: ClassExports = objc_classes! {
     this
 }
 
-- (id)description {
-    match env.objc.borrow(this) {
-        NSURLHostObject::FileURL { ns_string, working_directory } => {
-            let working_directory = working_directory.as_str().to_string();
-            let mut description = to_rust_string(env, *ns_string).to_string().clone();
-            if !description.starts_with('/') {
-                description = format!("{} -- file://localhost{}", description.trim_start_matches("./"), working_directory );
-            }
-            from_rust_string(env, description)
-        },
-        NSURLHostObject::OtherURL { ns_string } => *ns_string,
-    }
-}
-
 - (id)path {
     match *env.objc.borrow(this) {
-        NSURLHostObject::FileURL { ns_string, .. } => ns_string,
+        NSURLHostObject::FileURL { ns_string } => ns_string,
         NSURLHostObject::OtherURL { ns_string } => {
             // TODO: Support full URLs, not only ones that are just a path.
             // FIXME: This should do unescaping.
@@ -132,8 +109,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)absoluteString {
     match *env.objc.borrow(this) {
-        // FIXME: don't assume URL is already absolute
-        NSURLHostObject::FileURL { ns_string, .. } => ns_string,
+        NSURLHostObject::FileURL { ns_string } => ns_string,
         NSURLHostObject::OtherURL { ns_string } => {
             // TODO: full RFC 1808 resolution
             assert!(to_rust_string(env, ns_string).starts_with("http"));
@@ -152,7 +128,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (bool)getFileSystemRepresentation:(MutPtr<u8>)buffer
                           maxLength:(NSUInteger)buffer_size {
-    let &NSURLHostObject::FileURL { ns_string, .. } = env.objc.borrow(this) else {
+    let &NSURLHostObject::FileURL { ns_string } = env.objc.borrow(this) else {
         unimplemented!(); // TODO
     };
     msg![env; ns_string getCString:buffer

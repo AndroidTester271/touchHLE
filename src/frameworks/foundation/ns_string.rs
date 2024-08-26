@@ -42,9 +42,7 @@ pub const NSUTF16BigEndianStringEncoding: NSUInteger = 0x90000100;
 pub const NSUTF16LittleEndianStringEncoding: NSUInteger = 0x94000100;
 
 pub type NSStringCompareOptions = NSUInteger;
-pub const NSCaseInsensitiveSearch: NSUInteger = 1;
 pub const NSLiteralSearch: NSUInteger = 2;
-pub const NSBackwardsSearch: NSUInteger = 4;
 pub const NSNumericSearch: NSUInteger = 64;
 
 /// Encodings that C strings (null-terminated byte strings) can use.
@@ -335,49 +333,42 @@ pub const CLASSES: ClassExports = objc_classes! {
     utf16[index as usize]
 }
 
+- (())getCharacters:(MutPtr<u16>)buffer
+              range:(NSRange)range {
+    let mut buffer = buffer;
+    for i in range.location..(range.location + range.length) {
+        let c = msg![env; this characterAtIndex:i];
+        env.mem.write(buffer, c);
+        buffer += 1;
+    }
+}
+
 - (NSRange)rangeOfString:(id)search_string
                  options:(NSStringCompareOptions)options { // NSString *
-    log_dbg!(
-        "[(NSString *){} rangeOfString:{} options:{}]",
-        to_rust_string(env, this), to_rust_string(env, search_string), options
-    );
+    // TODO: search options
+    log_dbg!("rangeOfString:options: {}", options);
     let len: NSUInteger = msg![env; this length];
     let len_search: NSUInteger = msg![env; search_string length];
     if len_search == 0 {
         return NSRange { location: NSNotFound as NSUInteger, length: 0 };
     }
-    // TODO: other search options
-    // TODO: OR'ing of options
-    match options {
-        // 0 is for default options, which is NSLiteralSearch
-        NSLiteralSearch | 0 => {
-            for i in 0..len {
-                if is_match_at_position(env, this, search_string, i, len, len_search, |a, b| a == b) {
-                    return NSRange { location: i, length: len_search }
-                }
+    for i in 0..len {
+        let mut match_found = true;
+        for j in 0..len_search {
+            if (i + j) >= len {
+                match_found = false;
+                break;
             }
-        },
-        NSCaseInsensitiveSearch => {
-            let compare = |a, b| {
-                let (Some(a_c), Some(b_c)) = (char::from_u32(a as u32), char::from_u32(b as u32)) else {
-                    panic!("Invalid chars in the strings!");
-                };
-                a_c.to_lowercase().eq(b_c.to_lowercase())
-            };
-            for i in 0..len {
-                if is_match_at_position(env, this, search_string, i, len, len_search, compare) {
-                    return NSRange { location: i, length: len_search }
-                }
+            let a_c: u16 = msg![env; this characterAtIndex:(i + j)];
+            let b_c: u16 = msg![env; search_string characterAtIndex:j];
+            if a_c != b_c {
+                match_found = false;
+                break;
             }
-        },
-        NSBackwardsSearch => {
-            for i in (0..len).rev() {
-                if is_match_at_position(env, this, search_string, i, len, len_search, |a, b| a == b) {
-                    return NSRange { location: i, length: len_search }
-                }
-            }
-        },
-        _ => unimplemented!("options {}", options)
+        }
+        if match_found {
+            return NSRange { location: i, length: len_search }
+        }
     }
     NSRange { location: NSNotFound as NSUInteger, length: 0 }
 }
@@ -414,10 +405,6 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg![env; this compare:other options:NSLiteralSearch]
 }
 
-- (NSComparisonResult)caseInsensitiveCompare:(id)other { //NSString*
-    msg![env; this compare:other options:NSCaseInsensitiveSearch]
-}
-
 - (NSComparisonResult)compare:(id)other options:(NSStringCompareOptions)mask { // NSString*
     fn ascii_number(iter: &mut Peekable<CodeUnitIterator>, leftmost_digit: char) -> u32 {
         let mut num = leftmost_digit.to_digit(10).unwrap();
@@ -433,33 +420,8 @@ pub const CLASSES: ClassExports = objc_classes! {
     // copies the string first)
     let mut a_iter = env.objc.borrow::<StringHostObject>(this).iter_code_units().peekable();
     let mut b_iter = env.objc.borrow::<StringHostObject>(other).iter_code_units().peekable();
-
-    // By default, no mask is a literal search
-    let mask = if mask == 0 {
-        NSLiteralSearch
-    } else {
-        mask
-    };
-
     // TODO: OR'ing of compare options
     match mask {
-        NSCaseInsensitiveSearch => {
-            loop {
-                let a_next = a_iter.next();
-                let b_next = b_iter.next();
-                let (Some(a_unit), Some(b_unit)) = (a_next, b_next) else {
-                    return from_rust_ordering(a_next.cmp(&b_next));
-                };
-                let (Some(a_c), Some(b_c)) = (char::from_u32(a_unit as u32), char::from_u32(b_unit as u32)) else {
-                    panic!("Invalid chars in the strings!");
-                };
-
-                let insensitive_order = a_c.to_lowercase().cmp(b_c.to_lowercase());
-                if insensitive_order != std::cmp::Ordering::Equal {
-                    return from_rust_ordering(insensitive_order);
-                }
-            }
-        },
         NSLiteralSearch => {
             from_rust_ordering(a_iter.cmp(b_iter))
         },
@@ -490,12 +452,13 @@ pub const CLASSES: ClassExports = objc_classes! {
                 }
             }
         },
-        mask => unimplemented!("Other mask: {mask}"),
+        _ => unimplemented!("Other masks"),
     }
 }
 
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
+    // TODO: override this once we have NSMutableString!
     retain(env, this)
 }
 
@@ -583,6 +546,10 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg![env; this UTF8String]
 }
 
+- (ConstPtr<u8>)cString {
+    msg![env; this UTF8String]
+}
+
 - (ConstPtr<u8>)UTF8String {
     // TODO: avoid copying
     let string = to_rust_string(env, this);
@@ -620,6 +587,21 @@ pub const CLASSES: ClassExports = objc_classes! {
     let res = msg_class![env; _touchHLE_NSString alloc];
     *env.objc.borrow_mut(res) = StringHostObject::Utf16(res_utf16);
     autorelease(env, res)
+}
+
+- (id)dataUsingEncoding:(NSStringEncoding)encoding {
+    msg![env; this dataUsingEncoding:encoding allowLossyConversion:false]
+}
+
+- (id)dataUsingEncoding:(NSStringEncoding)encoding
+   allowLossyConversion:(bool)_lossy {
+    assert!(encoding == NSUTF8StringEncoding || encoding == NSASCIIStringEncoding);
+    let string = to_rust_string(env, this);
+    let size = string.len() as NSUInteger;
+    let alloc = env.mem.alloc(size);
+    let slice = env.mem.bytes_at_mut(alloc.cast(), size);
+    slice.copy_from_slice(string.as_bytes());
+    msg_class![env; NSData dataWithBytesNoCopy:alloc length:size]
 }
 
 - (id)stringByTrimmingCharactersInSet:(id)set { // NSCharacterSet*
@@ -707,6 +689,18 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, result_ns_string)
 }
 
+- (id)stringByAppendingFormat:(id)format, // NSString*
+                               ...args {
+    let res = with_format(env, format, args.start());
+    let res = from_rust_string(env, res);
+    let res = autorelease(env, res);
+    msg![env; this stringByAppendingString:res]
+}
+
+- (id)stringByAddingPercentEscapesUsingEncoding:(NSStringEncoding)encoding {
+    this
+}
+
 - (id)stringByAppendingString:(id)other { // NSString*
     assert!(other != nil); // TODO: raise exception
 
@@ -727,13 +721,6 @@ pub const CLASSES: ClassExports = objc_classes! {
     let class = env.objc.get_known_class("_touchHLE_NSString", &mut env.mem);
     let host_object = Box::new(StringHostObject::Utf16(new_utf16));
     env.objc.alloc_object(class, host_object, &mut env.mem)
-}
-
-- (id)stringByAppendingFormat:(id)format, ...args {
-    let new_string = with_format(env, format,  args.start());
-    let new_string = from_rust_string(env, new_string);
-    let new_string = msg![env; this stringByAppendingString:new_string];
-    autorelease(env, new_string)
 }
 
 - (id)stringByDeletingLastPathComponent {
@@ -902,75 +889,36 @@ pub const CLASSES: ClassExports = objc_classes! {
     success
 }
 
+- (i32)intValue {
+    let str = to_rust_string(env, this);
+    let mut cutoff = str.len();
+    for (i, c) in str.char_indices() {
+        if !c.is_ascii_digit() {
+            cutoff = i;
+            break;
+        }
+    }
+    str[..cutoff].parse().unwrap_or(0)
+}
+
 - (f32)floatValue {
-    let st = to_rust_string(env, this);
-    let st = st.trim_start();
-    let mut cutoff = st.len();
-    for (i, c) in st.char_indices() {
+    let str = to_rust_string(env, this);
+    let mut cutoff = str.len();
+    for (i, c) in str.char_indices() {
         if !c.is_ascii_digit() && c != '.' && c != '+' && c != '-' {
             cutoff = i;
             break;
         }
     }
-    // TODO: handle over/underflow properly
-    st[..cutoff].parse().unwrap_or(0.0)
+    str[..cutoff].parse().unwrap_or(0.0)
 }
 
-- (i32)intValue {
-    let st = to_rust_string(env, this);
-    let st = st.trim_start();
-    let mut cutoff = st.len();
-    for (i, c) in st.char_indices() {
-        if !c.is_ascii_digit() && c != '+' && c != '-' {
-            cutoff = i;
-            break;
-        }
+- (bool)boolValue {
+    let str = to_rust_string(env, this).to_string();
+    match str.as_str() {
+        "F" => false,
+        _x => unimplemented!("{}", _x)
     }
-    // TODO: handle over/underflow properly
-    st[..cutoff].parse().unwrap_or(0)
-}
-
-@end
-
-// NSMutableString is an abstract class. A subclass must everything
-// NSString provides, plus:
-// - (void)replaceCharactersInRange:(NSRange)range withString:(NSString)string;
-// Note that it inherits from NSString, so we must ensure we override any
-// default methods that would be inappropriate for mutability.
-@implementation NSMutableString: NSString
-
-+ (id)allocWithZone:(NSZonePtr)zone {
-    // NSMutableString might be subclassed by something
-    // which needs allocWithZone: to have the normal behaviour.
-    // Unimplemented: call superclass alloc then.
-    assert!(this == env.objc.get_known_class("NSMutableString", &mut env.mem));
-    msg_class![env; _touchHLE_NSMutableString allocWithZone:zone]
-}
-
-// NSCopying implementation
-- (id)copyWithZone:(NSZonePtr)_zone {
-    todo!(); // TODO: this should produce an immutable copy
-}
-
-- (())appendString:(id)a_string { // NSString*
-    assert_ne!(a_string, nil);
-    // TODO: this is inefficient? append in place instead
-    let new: id = msg![env; this stringByAppendingString:a_string];
-    () = msg![env; this setString:new];
-}
-
-- (())appendFormat:(id)format, // NSString*
-                   ...args {
-    assert_ne!(format, nil);
-    let res = with_format(env, format, args.start());
-    *env.objc.borrow_mut(this) = StringHostObject::Utf8(format!("{}{}", to_rust_string(env, this), res).into());
-}
-
-- (())setString:(id)a_string { // NSString*
-    assert_ne!(a_string, nil);
-    let str = to_rust_string(env, a_string);
-    let host_object = StringHostObject::Utf8(str);
-    *env.objc.borrow_mut(this) = host_object;
 }
 
 @end
@@ -1043,14 +991,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (id)initWithContentsOfFile:(id)path // NSString*
                     encoding:(NSStringEncoding)encoding
                        error:(MutPtr<id>)error { // NSError**
+    assert!(error.is_null()); // TODO: error handling
+
     // TODO: avoid copy?
     let path = to_rust_string(env, path);
-    let Ok(bytes) = env.fs.read(GuestPath::new(&path)) else {
-        assert!(error.is_null()); // TODO: error handling
-        return nil;
-    };
+    let bytes = env.fs.read(GuestPath::new(&path)).unwrap();
 
-    // TODO: error handling for encoding
     let host_object = StringHostObject::decode(Cow::Owned(bytes), encoding);
 
     *env.objc.borrow_mut(this) = host_object;
@@ -1064,29 +1010,28 @@ pub const CLASSES: ClassExports = objc_classes! {
     path.starts_with('/') || path.starts_with('~')
 }
 
-
-- (bool)boolValue {
-    let string = to_rust_string(env, this);
-    let string = string.trim_start_matches(|c: char| {
-        c.is_ascii_whitespace() || c == '-' || c == '+' || c == '0'
-    });
-
-    let matching_values = "YyTt123456789";
-    string.chars()
-        .next()
-        .map(|c| matching_values.contains(c))
-        .unwrap_or(false)
+// FIXME: this should be a NSMutableString method
+-(())setString:(id)aString { // NSString*
+    let str = to_rust_string(env, aString);
+    let host_object = StringHostObject::Utf8(str);
+    *env.objc.borrow_mut(this) = host_object;
 }
 
-- (id)dataUsingEncoding:(NSStringEncoding)encoding {
-    assert!(encoding == NSUTF8StringEncoding || encoding == NSASCIIStringEncoding);
+@end
 
-    // TODO: refactor with UTF8String method
-    let string = to_rust_string(env, this);
-    let c_string = env.mem.alloc_and_write_cstr(string.as_bytes());
-    let length: NSUInteger = (string.len() + 1).try_into().unwrap();
+@implementation NSMutableString: _touchHLE_NSString
 
-    msg_class![env; NSData dataWithBytesNoCopy:(c_string.cast_void()) length:length]
++ (id)stringWithCapacity:(NSUInteger)cap {
+    let new_str: id = msg![env; this alloc];
+    msg![env; new_str init]
+}
+
+- (())appendFormat:(id)format, // NSString*
+                     ...args {
+    let res = with_format(env, format, args.start());
+    let res = from_rust_string(env, res);
+    let new_str: id = msg![env; this stringByAppendingString:res];
+    msg![env; this setString:new_str]
 }
 
 @end
@@ -1118,15 +1063,6 @@ pub const CLASSES: ClassExports = objc_classes! {
 @end
 
 @implementation _touchHLE_NSString_CFConstantString_UTF16: _touchHLE_NSString_Static
-@end
-
-@implementation _touchHLE_NSMutableString: NSMutableString
-
-+ (id)allocWithZone:(NSZonePtr)_zone {
-    let host_object = Box::new(StringHostObject::Utf8(Cow::Borrowed("")));
-    env.objc.alloc_object(this, host_object, &mut env.mem)
-}
-
 @end
 
 };
@@ -1236,27 +1172,4 @@ where
             f(idx, c);
             idx += 1;
         });
-}
-
-/// Helper function for `rangeOfString:options:` method
-/// Note: this implementation is linear
-fn is_match_at_position<F: Fn(u16, u16) -> bool>(
-    env: &mut Environment,
-    the_string: id,
-    search_string: id,
-    start: NSUInteger,
-    len: NSUInteger,
-    len_search: NSUInteger,
-    compare_fn: F,
-) -> bool {
-    (0..len_search).all(|j| {
-        let curr: NSUInteger = start + j;
-        if curr < len {
-            let a_c: u16 = msg![env; the_string characterAtIndex:curr];
-            let b_c: u16 = msg![env; search_string characterAtIndex:j];
-            compare_fn(a_c, b_c)
-        } else {
-            false
-        }
-    })
 }

@@ -13,7 +13,9 @@ use crate::frameworks::foundation::ns_string::get_static_str;
 use crate::frameworks::foundation::NSUInteger;
 use crate::gles::gles11_raw as gles11; // constants only
 use crate::gles::gles11_raw::types::*;
+use crate::gles::gles1_on_gl2::{TEX_ENV_INT_PARAMS_DEFAULTS, TEX_ENV_PARAMS};
 use crate::gles::present::{present_frame, FpsCounter};
+use crate::gles::util::ParamType;
 use crate::gles::{create_gles1_ctx, gles1_on_gl2, GLES};
 use crate::objc::{id, msg, nil, objc_classes, release, retain, ClassExports, HostObject};
 use crate::options::Options;
@@ -382,6 +384,20 @@ unsafe fn get_tex_env_int(gles: &mut dyn GLES, target: GLenum, pname: GLenum) ->
     get_tex_env_ints::<1>(gles, target, pname)[0]
 }
 // Safety: caller's responsibility to use appropriate N.
+unsafe fn get_tex_env_floats<const N: usize>(
+    gles: &mut dyn GLES,
+    target: GLenum,
+    pname: GLenum,
+) -> [GLfloat; N] {
+    let mut res = [0.0; N];
+    gles.GetTexEnvfv(target, pname, res.as_mut_ptr());
+    res
+}
+// Safety: caller's responsibility to only use this for scalars.
+unsafe fn get_tex_env_float(gles: &mut dyn GLES, target: GLenum, pname: GLenum) -> GLfloat {
+    get_tex_env_floats::<1>(gles, target, pname)[0]
+}
+// Safety: caller's responsibility to use appropriate N.
 unsafe fn get_floats<const N: usize>(gles: &mut dyn GLES, pname: GLenum) -> [GLfloat; N] {
     let mut res = [0.0; N];
     gles.GetFloatv(pname, res.as_mut_ptr());
@@ -581,14 +597,47 @@ unsafe fn present_renderbuffer(gles: &mut dyn GLES, window: &mut Window) {
     let old_blend_sfactor: GLenum = get_int(gles, gles11::BLEND_SRC) as _;
     let old_blend_dfactor: GLenum = get_int(gles, gles11::BLEND_DST) as _;
 
-    let old_tex_env_mode = get_tex_env_int(gles, gles11::TEXTURE_ENV, gles11::TEXTURE_ENV_MODE);
-    // if the mode is REPLACE, we don't have to reset the other texture
-    // environment values
-    let tex_env_mode_arr = [gles11::REPLACE; 1];
-    gles.TexEnviv(
+    let old_tex_env_modes = TEX_ENV_PARAMS
+        .0
+        .iter()
+        .map(|&(param, type_, _)| {
+            if type_ == ParamType::Int {
+                get_tex_env_int(gles, gles11::TEXTURE_ENV, param)
+            } else {
+                0
+            }
+        })
+        .collect::<Vec<GLint>>();
+    for &(tex_env_param, default_val) in TEX_ENV_INT_PARAMS_DEFAULTS {
+        let default_tex_env_mode_arr = [default_val; 1];
+        gles.TexEnviv(
+            gles11::TEXTURE_ENV,
+            tex_env_param,
+            default_tex_env_mode_arr.as_ptr().cast(),
+        );
+    }
+
+    let old_tex_env_color =
+        get_tex_env_floats::<4>(gles, gles11::TEXTURE_ENV, gles11::TEXTURE_ENV_COLOR);
+    let default_tex_env_color: [GLfloat; 4] = [0.0; 4];
+    gles.TexEnvfv(
         gles11::TEXTURE_ENV,
-        gles11::TEXTURE_ENV_MODE,
-        tex_env_mode_arr.as_ptr().cast(),
+        gles11::TEXTURE_ENV_COLOR,
+        default_tex_env_color.as_ptr().cast(),
+    );
+    let old_tex_env_rgb_scale = get_tex_env_float(gles, gles11::TEXTURE_ENV, gles11::RGB_SCALE);
+    let default_tex_env_rgb_scale: [GLfloat; 1] = [1.0; 1];
+    gles.TexEnvfv(
+        gles11::TEXTURE_ENV,
+        gles11::RGB_SCALE,
+        default_tex_env_rgb_scale.as_ptr().cast(),
+    );
+    let old_tex_env_alpha_scale = get_tex_env_float(gles, gles11::TEXTURE_ENV, gles11::ALPHA_SCALE);
+    let default_tex_env_alpha_scale: [GLfloat; 1] = [1.0; 1];
+    gles.TexEnvfv(
+        gles11::TEXTURE_ENV,
+        gles11::ALPHA_SCALE,
+        default_tex_env_alpha_scale.as_ptr().cast(),
     );
 
     // Draw the quad
@@ -657,11 +706,33 @@ unsafe fn present_renderbuffer(gles: &mut dyn GLES, window: &mut Window) {
     gles.BindBuffer(gles11::ARRAY_BUFFER, old_array_buffer);
     gles.BlendFunc(old_blend_sfactor, old_blend_dfactor);
 
-    let old_tex_env_mode_arr = [old_tex_env_mode; 1];
-    gles.TexEnviv(
+    for (&(pname, type_, _), old_val) in TEX_ENV_PARAMS.0.iter().zip(old_tex_env_modes) {
+        if type_ != ParamType::Int {
+            continue;
+        }
+        let old_tex_env_mode_arr = [old_val; 1];
+        gles.TexEnviv(
+            gles11::TEXTURE_ENV,
+            pname,
+            old_tex_env_mode_arr.as_ptr().cast(),
+        );
+    }
+    gles.TexEnvfv(
         gles11::TEXTURE_ENV,
-        gles11::TEXTURE_ENV_MODE,
-        old_tex_env_mode_arr.as_ptr().cast(),
+        gles11::TEXTURE_ENV_COLOR,
+        old_tex_env_color.as_ptr().cast(),
+    );
+    let old_tex_env_rgb_scale_arr = [old_tex_env_rgb_scale; 1];
+    gles.TexEnvfv(
+        gles11::TEXTURE_ENV,
+        gles11::RGB_SCALE,
+        old_tex_env_rgb_scale_arr.as_ptr().cast(),
+    );
+    let old_tex_env_alpha_scale_arr = [old_tex_env_alpha_scale; 1];
+    gles.TexEnvfv(
+        gles11::TEXTURE_ENV,
+        gles11::ALPHA_SCALE,
+        old_tex_env_alpha_scale_arr.as_ptr().cast(),
     );
 
     // SDL2's documentation warns 0 should be bound to the draw framebuffer

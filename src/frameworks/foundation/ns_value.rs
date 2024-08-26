@@ -5,19 +5,18 @@
  */
 //! The `NSValue` class cluster, including `NSNumber`.
 
-use super::NSUInteger;
-use crate::frameworks::foundation::ns_string::from_rust_string;
-use crate::objc::{
-    autorelease, id, msg, msg_class, objc_classes, retain, Class, ClassExports, HostObject,
-    NSZonePtr,
-};
+use super::{NSInteger, NSUInteger};
+use crate::mem::ConstVoidPtr;
+use crate::objc::{autorelease, id, msg, msg_class, objc_classes, retain, Class, ClassExports, HostObject, NSZonePtr, nil};
 
+#[derive(Debug)]
 enum NSNumberHostObject {
     Bool(bool),
     UnsignedLongLong(u64),
     LongLong(i64),
     Float(f32),
     Double(f64),
+    Int(i32),
 }
 impl HostObject for NSNumberHostObject {}
 
@@ -28,6 +27,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 // NSValue is an abstract class. None of the things it should provide are
 // implemented here yet (TODO).
 @implementation NSValue: NSObject
+
++ (id)valueWithPointer:(ConstVoidPtr)ptr {
+    nil
+}
 
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
@@ -42,6 +45,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)allocWithZone:(NSZonePtr)_zone {
     let host_object = Box::new(NSNumberHostObject::Bool(false));
     env.objc.alloc_object(this, host_object, &mut env.mem)
+}
+
++ (id)numberWithInt:(i32)value {
+    let new: id = msg![env; this alloc];
+    let new: id = msg![env; new initWithInteger:value];
+    autorelease(env, new)
 }
 
 + (id)numberWithBool:(bool)value {
@@ -91,6 +100,11 @@ pub const CLASSES: ClassExports = objc_classes! {
     this
 }
 
+- (id)initWithInteger:(NSInteger)value {
+    *env.objc.borrow_mut::<NSNumberHostObject>(this) = NSNumberHostObject::Int(value);
+    this
+}
+
 - (id)initWithFloat:(f32)value {
     *env.objc.borrow_mut(this) = NSNumberHostObject::Float(value);
     this
@@ -111,15 +125,6 @@ pub const CLASSES: ClassExports = objc_classes! {
     this
 }
 
-- (id)description {
-    match env.objc.borrow(this) {
-        NSNumberHostObject::Bool(value) => from_rust_string(env, (*value as i32).to_string()),
-        NSNumberHostObject::UnsignedLongLong(value) => from_rust_string(env, value.to_string()),
-        NSNumberHostObject::LongLong(value) => from_rust_string(env, value.to_string()),
-        NSNumberHostObject::Float(value) => from_rust_string(env, value.to_string()),
-        NSNumberHostObject::Double(value) => from_rust_string(env, value.to_string())
-    }
-}
 - (NSUInteger)hash {
     let &NSNumberHostObject::Bool(value) = env.objc.borrow(this) else {
         todo!();
@@ -144,6 +149,14 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 // TODO: accessors etc
+
+- (i32)intValue {
+    match env.objc.borrow(this) {
+        &NSNumberHostObject::Int(value) => value,
+        &NSNumberHostObject::LongLong(value) => value.try_into().unwrap(),
+        _x => unimplemented!("{:?}", _x)
+    }
+}
 
 @end
 

@@ -6,9 +6,9 @@
 //! `MPMoviePlayerController` etc.
 
 use crate::dyld::{ConstantExports, HostConstant};
-use crate::frameworks::foundation::{ns_string, ns_url, NSInteger};
-use crate::frameworks::uikit::ui_device::UIDeviceOrientation;
-use crate::objc::{id, msg, msg_class, objc_classes, release, retain, ClassExports};
+use crate::frameworks::foundation::{ns_string, ns_url, NSInteger, NSTimeInterval, NSUInteger};
+use crate::objc::{id, nil, msg, msg_class, objc_classes, release, retain, ClassExports};
+use crate::mem::MutPtr;
 use crate::Environment;
 use std::collections::VecDeque;
 
@@ -75,10 +75,6 @@ pub const CLASSES: ClassExports = objc_classes! {
     this
 }
 
-- (())setBackgroundColor:(id)_color { // UIColor*
-    // TODO
-}
-
 - (())setScalingMode:(MPMovieScalingMode)_mode {
     // TODO
 }
@@ -98,12 +94,6 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
     // As this is undocumented and we don't have real video playback yet, let's
     // ignore it otherwise.
-}
-
-// Another undocumented one! But some apps may still use it :/
-// https://stackoverflow.com/a/1390079/2241008
-- (())setOrientation:(UIDeviceOrientation)_orientation animated:(bool)_animated {
-
 }
 
 // MPMediaPlayback implementation
@@ -129,6 +119,37 @@ pub const CLASSES: ClassExports = objc_classes! {
     release(env, this);
 }
 
+@end
+
+@implementation MPMusicPlayerController: NSObject
+
++ (id)iPodMusicPlayer {
+    crate::objc::nil
+}
+
+@end
+
+@implementation SKProduct: NSObject
+@end
+
+@implementation NSMutableURLRequest: NSObject
++ (id)requestWithURL:(id)url {
+    nil
+}
++ (id)requestWithURL:(id)url cachePolicy:(NSUInteger)cp timeoutInterval:(NSTimeInterval)ti {
+    nil
+}
+@end
+
+@implementation NSURLConnection: NSObject
++ (id)sendSynchronousRequest:(id)request
+           returningResponse:(MutPtr<id>)response
+                       error:(MutPtr<id>)error {
+    nil
+}
+- (id)initWithRequest:(id)req delegate:(id)deleg startImmediately:(bool)b {
+    nil
+}
 @end
 
 };

@@ -2,7 +2,6 @@
 
 if [[ "$1" = "--check" ]]; then
     RUSTFMT_EXTRA='--check'
-    # "-Werror" ensures that warnings result in a non-zero exit status.
     CLANG_FORMAT_EXTRA='--dry-run -Werror'
 else
     RUSTFMT_EXTRA=''

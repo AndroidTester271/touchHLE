@@ -30,10 +30,7 @@ type clock_t = u64;
 const CLOCKS_PER_SEC: clock_t = 1000000;
 
 fn clock(env: &mut Environment) -> clock_t {
-    Instant::now()
-        .duration_since(env.startup_time)
-        .as_secs()
-        .wrapping_mul(CLOCKS_PER_SEC)
+    Instant::now().duration_since(env.startup_time).as_secs() * CLOCKS_PER_SEC
 }
 
 fn time(env: &mut Environment, out: MutPtr<time_t>) -> time_t {
@@ -50,10 +47,6 @@ fn time(env: &mut Environment, out: MutPtr<time_t>) -> time_t {
         env.mem.write(out, time);
     }
     time
-}
-
-fn tzset(_env: &mut Environment) {
-    log!("TODO: tzset()");
 }
 
 #[allow(non_camel_case_types)]
@@ -336,21 +329,20 @@ fn gettimeofday(
     0 // success
 }
 
-fn nanosleep(env: &mut Environment, rqtp: ConstPtr<timespec>, _rmtp: MutPtr<timespec>) -> i32 {
+fn nanosleep(env: &mut Environment, rqtp: ConstPtr<timespec>, rmtp: MutPtr<timespec>) -> i32 {
+    assert!(rmtp.is_null());
     let t = env.mem.read(rqtp);
     let tv_sec = t.tv_sec;
     let tv_nsec = t.tv_nsec;
+    assert_eq!(tv_sec, 0);
     log_dbg!("nanosleep {} {}", tv_sec, tv_nsec);
-    let total_sleep = Duration::from_secs(tv_sec.try_into().unwrap())
-        + Duration::from_nanos(tv_nsec.try_into().unwrap());
-    env.sleep(total_sleep, true);
+    env.sleep(Duration::from_nanos(tv_nsec.try_into().unwrap()), true);
     0 // success
 }
 
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(clock()),
     export_c_func!(time(_)),
-    export_c_func!(tzset()),
     export_c_func!(gmtime_r(_, _)),
     export_c_func!(gmtime(_)),
     export_c_func!(localtime_r(_, _)),

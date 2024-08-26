@@ -83,6 +83,9 @@ impl GLES for GLES1Native {
     unsafe fn GetIntegerv(&mut self, pname: GLenum, params: *mut GLint) {
         gles11::GetIntegerv(pname, params)
     }
+    unsafe fn GetTexEnvfv(&mut self, target: GLenum, pname: GLenum, params: *mut GLfloat) {
+        gles11::GetTexEnvfv(target, pname, params)
+    }
     unsafe fn GetTexEnviv(&mut self, target: GLenum, pname: GLenum, params: *mut GLint) {
         gles11::GetTexEnviv(target, pname, params)
     }
@@ -161,26 +164,6 @@ impl GLES for GLES1Native {
         gles11::LineWidthx(val)
     }
 
-    // Points
-    unsafe fn PointSize(&mut self, size: GLfloat) {
-        gles11::PointSize(size)
-    }
-    unsafe fn PointSizex(&mut self, size: GLfixed) {
-        gles11::PointSizex(size)
-    }
-    unsafe fn PointParameterf(&mut self, pname: GLenum, param: GLfloat) {
-        gles11::PointParameterf(pname, param)
-    }
-    unsafe fn PointParameterx(&mut self, pname: GLenum, param: GLfixed) {
-        gles11::PointParameterx(pname, param)
-    }
-    unsafe fn PointParameterfv(&mut self, pname: GLenum, params: *const GLfloat) {
-        gles11::PointParameterfv(pname, params)
-    }
-    unsafe fn PointParameterxv(&mut self, pname: GLenum, params: *const GLfixed) {
-        gles11::PointParameterxv(pname, params)
-    }
-
     // Lighting and materials
     unsafe fn Fogf(&mut self, pname: GLenum, param: GLfloat) {
         gles11::Fogf(pname, param)
@@ -205,12 +188,6 @@ impl GLES for GLES1Native {
     }
     unsafe fn Lightxv(&mut self, light: GLenum, pname: GLenum, params: *const GLfixed) {
         gles11::Lightxv(light, pname, params)
-    }
-    unsafe fn LightModelf(&mut self, pname: GLenum, param: GLfloat) {
-        gles11::LightModelf(pname, param)
-    }
-    unsafe fn LightModelfv(&mut self, pname: GLenum, params: *const GLfloat) {
-        gles11::LightModelfv(pname, params)
     }
     unsafe fn Materialf(&mut self, face: GLenum, pname: GLenum, param: GLfloat) {
         gles11::Materialf(face, pname, param)
@@ -403,7 +380,7 @@ impl GLES for GLES1Native {
         &mut self,
         target: GLenum,
         level: GLint,
-        mut internalformat: GLint,
+        internalformat: GLint,
         width: GLsizei,
         height: GLsizei,
         border: GLint,
@@ -411,16 +388,6 @@ impl GLES for GLES1Native {
         type_: GLenum,
         pixels: *const GLvoid,
     ) {
-        if format == gles11::BGRA_EXT {
-            // This is needed in order to avoid white screen issue on Android!
-            // As per BGRA extension specs
-            // https://registry.khronos.org/OpenGL/extensions/EXT/EXT_texture_format_BGRA8888.txt,
-            // both internalformat and format should be BGRA
-            // Tangentially related issue
-            // (actually a reverse of what we're doing here)
-            // https://android-review.googlesource.com/c/platform/external/qemu/+/974666
-            internalformat = gles11::BGRA_EXT as GLint
-        }
         gles11::TexImage2D(
             target,
             level,

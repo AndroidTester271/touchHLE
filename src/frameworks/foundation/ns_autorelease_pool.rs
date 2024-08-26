@@ -42,18 +42,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 + (())addObject:(id)obj {
     let current_thread = env.current_thread;
-    if let Some(current_pool) = State::get(env)
-        .pool_stacks
-        .get(&current_thread)
-        .and_then(|pool_stack| pool_stack.last().copied())
-    {
+    let pool_stack = State::get(env).pool_stacks.get(&current_thread).unwrap();
+    if let Some(current_pool) = pool_stack.last().copied() {
         msg![env; current_pool addObject:obj]
     } else {
-        log_dbg!(
-            "Warning: no active NSAutoreleasePool, leaking {:?}, current thread {}",
-            obj,
-            current_thread
-        );
+        log_dbg!("Warning: no active NSAutoreleasePool, leaking {:?}, current thread {}", obj, current_thread);
     }
 }
 

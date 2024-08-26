@@ -25,6 +25,8 @@ android {
         }
         minSdkVersion 21 // first version with AArch64
         targetSdkVersion 31
+        versionCode 1
+        versionName "1.0"
         externalNativeBuild {
             ndkBuild {
                 arguments "APP_PLATFORM=android-21"
@@ -93,7 +95,7 @@ cargoNdk {
     // Make sure this matches the android abiFilters above.
     targets = ["arm64"]
     module = ".."
-    librariesNames = ["libtouchHLE.so", "libSDL2.so", "libc++_shared.so"]
+    librariesNames = ["libtouchHLE.so", "libSDL2.so"]
     extraCargoEnv = ["ANDROID_NDK": android.ndkDirectory, "ANDROID_NDK_HOME": android.ndkDirectory]
     // The default feature, "static", makes us use static linking for SDL2 and OpenAL Soft.
     // For Android, we need dynamic linking for SDL2, but static linking for OpenAL Soft.

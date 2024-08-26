@@ -7,7 +7,7 @@
 
 use super::ui_device::*;
 use crate::dyld::{export_c_func, FunctionExports};
-use crate::frameworks::foundation::{ns_array, ns_string};
+use crate::frameworks::foundation::{ns_array, ns_string, NSInteger, NSUInteger};
 use crate::frameworks::uikit::ui_nib::load_main_nib_file;
 use crate::mem::MutPtr;
 use crate::objc::{
@@ -48,7 +48,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 + (id)sharedApplication {
-    env.framework_state.uikit.ui_application.shared_application.unwrap_or(nil)
+    env.framework_state.uikit.ui_application.shared_application.unwrap()
 }
 
 // This should only be called by UIApplicationMain
@@ -84,6 +84,9 @@ pub const CLASSES: ClassExports = objc_classes! {
                 animated:(bool)_animated {
     // TODO: animation
     msg![env; this setStatusBarHidden:hidden]
+}
+
+- (())setApplicationIconBadgeNumber:(NSInteger)_num {
 }
 
 - (UIInterfaceOrientation)statusBarOrientation {
@@ -131,6 +134,14 @@ pub const CLASSES: ClassExports = objc_classes! {
     true
 }
 
+    - (bool)isIgnoringInteractionEvents {
+    false
+}
+
+-(())endIgnoringInteractionEvents {
+
+}
+    
 // TODO: ignore touches
 -(())beginIgnoringInteractionEvents {
     log!("TODO: ignoring beginIgnoringInteractionEvents");
@@ -155,6 +166,9 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
     let windows = ns_array::from_vec(env, visible_windows);
     autorelease(env, windows)
+}
+
+- (())registerForRemoteNotificationTypes:(NSUInteger)_types {
 }
 
 @end

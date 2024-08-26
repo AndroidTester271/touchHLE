@@ -11,7 +11,6 @@
 
 mod generic_char;
 
-pub mod clocale;
 pub mod ctype;
 pub mod cxxabi;
 pub mod dirent;
@@ -26,14 +25,11 @@ pub mod mmap;
 pub mod net;
 pub mod posix_io;
 pub mod pthread;
-pub mod sched;
 pub mod semaphore;
 pub mod setjmp;
-pub mod signal;
 pub mod stdio;
 pub mod stdlib;
 pub mod string;
-pub mod sys;
 pub mod sysctl;
 pub mod time;
 pub mod unistd;
@@ -51,5 +47,4 @@ pub struct State {
     string: string::State,
     time: time::State,
     errno: errno::State,
-    clocale: clocale::State,
 }

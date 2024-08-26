@@ -6,8 +6,8 @@
 //! `math.h`
 
 use crate::dyld::{export_c_func, FunctionExports};
-use crate::mem::MutPtr;
 use crate::Environment;
+use crate::mem::MutPtr;
 
 // The sections in this file are organized to match the C standard.
 
@@ -190,11 +190,6 @@ fn trunc(_env: &mut Environment, arg: f64) -> f64 {
 fn truncf(_env: &mut Environment, arg: f32) -> f32 {
     arg.trunc()
 }
-fn modff(env: &mut Environment, val: f32, iptr: MutPtr<f32>) -> f32 {
-    let ivalue = truncf(env, val);
-    env.mem.write(iptr, ivalue);
-    val - ivalue
-}
 
 // Remainder functions
 // TODO: implement the rest
@@ -220,7 +215,42 @@ fn fminf(_env: &mut Environment, arg1: f32, arg2: f32) -> f32 {
     arg1.min(arg2)
 }
 
+// int32_t
+//      OSAtomicAdd32Barrier(int32_t theAmount, volatile int32_t *theValue)
+fn OSAtomicAdd32Barrier(
+    env: &mut Environment, the_amount: i32, the_value: MutPtr<i32>
+) -> i32 {
+    let curr = env.mem.read(the_value);
+    let new = curr + the_amount;
+    env.mem.write(the_value, new);
+    new
+}
+
+fn OSAtomicCompareAndSwap32(
+    env: &mut Environment, old_value: i32, new_value: i32, the_value: MutPtr<i32>
+) -> bool {
+    OSAtomicCompareAndSwap32Barrier(env, old_value, new_value, the_value)
+}
+
+fn OSAtomicCompareAndSwap32Barrier(
+    env: &mut Environment, old_value: i32, new_value: i32, the_value: MutPtr<i32>
+) -> bool {
+    if old_value == env.mem.read(the_value) {
+        env.mem.write(the_value, new_value);
+        true
+    } else {
+        false
+    }
+}
+
+fn OSMemoryBarrier(env: &mut Environment) {
+}
+
 pub const FUNCTIONS: FunctionExports = &[
+    export_c_func!(OSAtomicCompareAndSwap32Barrier(_, _, _)),
+    export_c_func!(OSAtomicCompareAndSwap32(_, _, _)),
+    export_c_func!(OSMemoryBarrier()),
+    export_c_func!(OSAtomicAdd32Barrier(_, _)),
     // Trigonometric functions
     export_c_func!(sin(_)),
     export_c_func!(sinf(_)),
@@ -278,7 +308,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(roundf(_)),
     export_c_func!(trunc(_)),
     export_c_func!(truncf(_)),
-    export_c_func!(modff(_, _)),
     // Remainder functions
     export_c_func!(fmod(_, _)),
     export_c_func!(fmodf(_, _)),

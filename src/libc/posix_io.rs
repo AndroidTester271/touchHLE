@@ -122,18 +122,7 @@ pub fn open_direct(env: &mut Environment, path: ConstPtr<u8>, flags: i32) -> Fil
         options.truncate();
     }
 
-    let path_string = match env.mem.cstr_at_utf8(path) {
-        Ok(path_str) => path_str.to_owned(),
-        Err(err) => {
-            log!(
-                "open() error, unable to treat {:?} as utf8 str: {:?}",
-                path,
-                err
-            );
-            // TODO: set errno
-            return -1;
-        }
-    };
+    let path_string = env.mem.cstr_at_utf8(path).unwrap().to_owned();
     // TODO: symlinks don't exist in the FS yet, so we can't "not follow" them.
     if flags & O_NOFOLLOW != 0 {
         log!("Ignoring O_NOFOLLOW when opening {:?}", path_string);
@@ -189,8 +178,9 @@ pub fn read(
     buffer: MutVoidPtr,
     size: GuestUSize,
 ) -> GuestISize {
-    // TODO: error handling for unknown fd?
-    let file = env.libc_state.posix_io.file_for_fd(fd).unwrap();
+    let Some(file) = env.libc_state.posix_io.file_for_fd(fd) else {
+        return 0;
+    };
 
     let buffer_slice = env.mem.bytes_at_mut(buffer.cast(), size);
     match file.file.read(buffer_slice) {
@@ -248,8 +238,9 @@ pub fn write(
     buffer: ConstVoidPtr,
     size: GuestUSize,
 ) -> GuestISize {
-    // TODO: error handling for unknown fd?
-    let file = env.libc_state.posix_io.file_for_fd(fd).unwrap();
+    let Some(file) = env.libc_state.posix_io.file_for_fd(fd) else {
+        return 0;
+    };
 
     let buffer_slice = env.mem.bytes_at(buffer.cast(), size);
     match file.file.write(buffer_slice) {
@@ -351,7 +342,7 @@ pub fn close(env: &mut Environment, fd: FileDescriptor) -> i32 {
     }
 }
 
-pub fn getcwd(env: &mut Environment, buf_ptr: MutPtr<u8>, buf_size: GuestUSize) -> MutPtr<u8> {
+fn getcwd(env: &mut Environment, buf_ptr: MutPtr<u8>, buf_size: GuestUSize) -> MutPtr<u8> {
     let working_directory = env.fs.working_directory();
     if !env.fs.is_dir(working_directory) {
         // TODO: set errno to ENOENT
@@ -440,6 +431,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(write(_, _, _)),
     export_c_func!(lseek(_, _, _)),
     export_c_func!(close(_)),
+    export_c_func!(getcwd(_, _)),
     export_c_func!(getcwd(_, _)),
     export_c_func!(chdir(_)),
     export_c_func!(flock(_, _)),

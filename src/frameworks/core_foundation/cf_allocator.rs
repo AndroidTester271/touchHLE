@@ -13,4 +13,7 @@ pub type CFAllocatorRef = CFTypeRef;
 
 pub const kCFAllocatorDefault: CFAllocatorRef = Ptr::null();
 
-pub const CONSTANTS: ConstantExports = &[("_kCFAllocatorDefault", HostConstant::NullPtr)];
+pub const CONSTANTS: ConstantExports = &[
+    ("_kCFAllocatorDefault", HostConstant::NullPtr),
+    ("_mach_task_self_", HostConstant::NullPtr)
+];

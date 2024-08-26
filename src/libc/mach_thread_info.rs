@@ -13,10 +13,10 @@ use crate::dyld::{export_c_func, FunctionExports};
 use crate::mem::{guest_size_of, MutPtr, SafeRead};
 use crate::Environment;
 
-type kern_return_t = i32;
-const KERN_SUCCESS: kern_return_t = 0;
+pub type kern_return_t = i32;
+pub const KERN_SUCCESS: kern_return_t = 0;
 
-type mach_port_t = u32;
+pub type mach_port_t = u32;
 
 type natural_t = u32;
 type integer_t = i32;

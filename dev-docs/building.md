@@ -4,16 +4,10 @@
 
 A list of supported target platforms (platforms you can build touchHLE _for_) can be found in `README.md`. However, that's not the whole story, because you should also know supported host platforms when building (platforms you can build touchHLE _on_).
 
-Things tend to be easiest when the target and host platforms are the same. When they aren't the same, it's called “cross-compilation”.
-
-These three platforms are [used by our GitHub Actions CI](../.github/workflows/touchHLE_release.yml)
+Things tend to be easiest when the target and host platforms are the same. When they aren't the same, it's called “cross-compilation”. These are expected to work:
 
 * Building for x64 Windows on x64 Windows
 * Building for x64 macOS on x64 macOS
-* Building for AArch64 Android on x64 Linux
-
-This platform is manually tested by certain developers:
-
 * Building for AArch64 Android on x64 macOS
 
 These should also work but aren't regularly tested:
@@ -24,8 +18,8 @@ These should also work but aren't regularly tested:
 
 Some pairings that have been tried and apparently **don't work**:
 
-* [Building for x64 macOS on AArch64 macOS](https://github.com/touchHLE/touchHLE/issues/71)
-* [Building for AArch64 Android on x64 Windows](https://github.com/touchHLE/touchHLE/issues/107)
+* [Building for x64 macOS on AArch64 macOS](https://github.com/hikari-no-yume/touchHLE/issues/71)
+* [Building for AArch64 Android on x64 Windows](https://github.com/hikari-no-yume/touchHLE/issues/107)
 
 Of course, we aspire to have cross-compilation work cleanly for all platforms, but alas we're not there yet. Contributions are of course encouraged, and if you hit an issue when cross-compiling targeting a supported platform, please do tell us about it, though no promises can be made about whether your issue will be fixed.
 
@@ -33,7 +27,7 @@ Of course, we aspire to have cross-compilation work cleanly for all platforms, b
 
 ### General
 
-You need [git](https://git-scm.com/), [the Rust toolchain](https://www.rust-lang.org/tools/install), [CMake](https://cmake.org/), and your platform's standard C and C++ compilers.
+You need [git](https://git-scm.com/), [the Rust toolchain](https://www.rust-lang.org/tools/install), and your platform's standard C and C++ compilers.
 
 First check out the git repo with `git clone`. Also make sure you get the submodules (`git submodule update --init` should be enough). (**If you intend to make commits**, you please also read the “Setting up the repo” section of [the contributing guide](CONTRIBUTING.md).)
 
@@ -50,7 +44,6 @@ You need three additional things for Android:
 
 1. Its Rust toolchain: `rustup target add aarch64-linux-android`
 2. cargo-ndk: `cargo install cargo-ndk`
-   - Important: make sure to use version 3.4.0 or later (can be checked with `cargo ndk -v`)
 3. The Android SDK and NDK. There's two options:
     - Install Android Studio (recommended): https://developer.android.com/
     - Install "Command line tools only": https://developer.android.com/studio/index.html#command-line-tools-only

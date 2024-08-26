@@ -13,6 +13,7 @@ use crate::{Environment, ThreadId};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use crate::libc::mach_thread_info::{kern_return_t, KERN_SUCCESS, mach_port_t};
 
 // SEM_FAILED is defined as -1 while having a type of sem_t *
 const SEM_FAILED: MutPtr<sem_t> = MutPtr::from_bits(u32::MAX);
@@ -120,6 +121,29 @@ fn sem_unlink(env: &mut Environment, name: ConstPtr<u8>) -> i32 {
     0 // success
 }
 
+// Mach semaphores
+
+#[allow(non_camel_case_types)]
+type task_t = mach_port_t;
+#[allow(non_camel_case_types)]
+type semaphore_t = mach_port_t;
+
+fn semaphore_create(
+    env: &mut Environment,
+    task: task_t,
+    semaphore: MutPtr<semaphore_t>,
+    policy: i32,
+    value: i32) -> kern_return_t {
+    assert_eq!(task, 0);
+    // TODO: do not use names
+    let sem_name = env.mem.alloc_and_write_cstr(b"_self");
+    let sem = sem_open(env, sem_name.cast_const(), O_CREAT, 0, value.try_into().unwrap());
+    env.mem.free(sem_name.cast());
+    // TODO: this is fragile
+    env.mem.write(semaphore, sem.to_bits());
+    KERN_SUCCESS
+}
+
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(sem_open(_, _, _, _)),
     export_c_func!(sem_post(_)),
@@ -127,4 +151,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(sem_trywait(_)),
     export_c_func!(sem_close(_)),
     export_c_func!(sem_unlink(_)),
+    //
+    export_c_func!(semaphore_create(_, _, _, _)),
 ];

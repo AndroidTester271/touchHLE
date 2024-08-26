@@ -6,11 +6,7 @@
 //! `stdlib.h`
 
 use crate::abi::{CallFromHost, GuestFunction};
-use crate::dyld::{export_c_func, export_c_func_aliased, FunctionExports};
-use crate::fs::{resolve_path, GuestPath};
-use crate::libc::clocale::{setlocale, LC_CTYPE};
-use crate::libc::string::strlen;
-use crate::libc::wchar::wchar_t;
+use crate::dyld::{export_c_func, FunctionExports};
 use crate::mem::{ConstPtr, ConstVoidPtr, GuestUSize, MutPtr, MutVoidPtr, Ptr};
 use crate::Environment;
 use std::collections::HashMap;
@@ -79,9 +75,22 @@ fn skip_whitespace(env: &mut Environment, s: ConstPtr<u8>) -> ConstPtr<u8> {
 }
 
 fn atoi(env: &mut Environment, s: ConstPtr<u8>) -> i32 {
+    // atoi() doesn't work with a null-terminated string, instead it stops
+    // once it hits something that's not a digit, so we have to do some parsing
+    // ourselves.
+    let start = skip_whitespace(env, s);
+    let mut len = 0;
+    let maybe_sign = env.mem.read(start + len);
+    if maybe_sign == b'+' || maybe_sign == b'-' || maybe_sign.is_ascii_digit() {
+        len += 1;
+    }
+    while env.mem.read(start + len).is_ascii_digit() {
+        len += 1;
+    }
+
+    let s = std::str::from_utf8(env.mem.bytes_at(start, len)).unwrap();
     // conveniently, overflow is undefined, so 0 is as valid a result as any
-    let (res, _) = atoi_inner(env, s).unwrap_or((0, 0));
-    res
+    s.parse().unwrap_or(0)
 }
 
 fn atol(env: &mut Environment, s: ConstPtr<u8>) -> i32 {
@@ -89,16 +98,7 @@ fn atol(env: &mut Environment, s: ConstPtr<u8>) -> i32 {
 }
 
 fn atof(env: &mut Environment, s: ConstPtr<u8>) -> f64 {
-    strtod(env, s, Ptr::null())
-}
-
-fn strtod(env: &mut Environment, nptr: ConstPtr<u8>, endptr: MutPtr<MutPtr<u8>>) -> f64 {
-    log_dbg!("strtod nptr {}", env.mem.cstr_at_utf8(nptr).unwrap());
-    let (res, len) = atof_inner(env, nptr).unwrap_or((0.0, 0));
-    if !endptr.is_null() {
-        env.mem.write(endptr, (nptr + len).cast_mut());
-    }
-    res
+    atof_inner(env, s).map_or(0.0, |tuple| tuple.0)
 }
 
 fn prng(state: u32) -> u32 {
@@ -115,7 +115,6 @@ fn prng(state: u32) -> u32 {
 }
 
 const RAND_MAX: i32 = i32::MAX;
-const ULONG_MAX: u32 = u32::MAX;
 
 fn srand(env: &mut Environment, seed: u32) {
     env.libc_state.stdlib.rand = seed;
@@ -232,96 +231,6 @@ fn strtof(env: &mut Environment, nptr: ConstPtr<u8>, endptr: MutPtr<ConstPtr<u8>
     number as f32
 }
 
-fn strtoul(env: &mut Environment, str: ConstPtr<u8>, endptr: MutPtr<MutPtr<u8>>, base: i32) -> u32 {
-    let s = env.mem.cstr_at_utf8(str).unwrap();
-    log_dbg!("strtoul '{}'", s);
-    assert_eq!(base, 16);
-    let without_prefix = s.trim_start_matches("0x");
-    let res = u32::from_str_radix(without_prefix, 16).unwrap_or(ULONG_MAX);
-    if !endptr.is_null() {
-        let len: GuestUSize = s.len().try_into().unwrap();
-        env.mem.write(endptr, (str + len).cast_mut());
-    }
-    res
-}
-
-fn realpath(
-    env: &mut Environment,
-    file_name: ConstPtr<u8>,
-    resolve_name: MutPtr<u8>,
-) -> MutPtr<u8> {
-    assert!(!resolve_name.is_null());
-
-    let file_name_str = env.mem.cstr_at_utf8(file_name).unwrap();
-    // TOD0: resolve symbolic links
-    let resolved = resolve_path(
-        GuestPath::new(file_name_str),
-        Some(env.fs.working_directory()),
-    );
-    let result = format!("/{}", resolved.join("/"));
-    env.mem
-        .bytes_at_mut(resolve_name, result.len() as GuestUSize)
-        .copy_from_slice(result.as_bytes());
-    env.mem
-        .write(resolve_name + result.len() as GuestUSize, b'\0');
-
-    log_dbg!(
-        "realpath file_name '{}', resolve_name '{}'",
-        env.mem.cstr_at_utf8(file_name).unwrap(),
-        env.mem.cstr_at_utf8(resolve_name).unwrap()
-    );
-
-    resolve_name
-}
-
-fn mbstowcs(
-    env: &mut Environment,
-    pwcs: MutPtr<wchar_t>,
-    s: ConstPtr<u8>,
-    n: GuestUSize,
-) -> GuestUSize {
-    // TODO: support other locales
-    let ctype_locale = setlocale(env, LC_CTYPE, Ptr::null());
-    assert_eq!(env.mem.read(ctype_locale), b'C');
-
-    let size = strlen(env, s);
-    let to_write = size.min(n);
-    for i in 0..to_write {
-        let c = env.mem.read(s + i);
-        env.mem.write(pwcs + i, c as wchar_t);
-    }
-    if to_write < n {
-        env.mem.write(pwcs + to_write, wchar_t::default());
-    }
-    to_write
-}
-
-fn wcstombs(
-    env: &mut Environment,
-    s: ConstPtr<u8>,
-    pwcs: MutPtr<wchar_t>,
-    n: GuestUSize,
-) -> GuestUSize {
-    // TODO: support other locales
-    let ctype_locale = setlocale(env, LC_CTYPE, Ptr::null());
-    assert_eq!(env.mem.read(ctype_locale), b'C');
-
-    if n == 0 {
-        return 0;
-    }
-    let wcstr = env.mem.wcstr_at(pwcs);
-    let len: GuestUSize = wcstr.bytes().len() as GuestUSize;
-    let len = len.min(n);
-    log_dbg!("wcstombs '{}', len {}, n {}", wcstr, len, n);
-    env.mem
-        .bytes_at_mut(s.cast_mut(), len)
-        .copy_from_slice(wcstr.as_bytes());
-    if len < n {
-        env.mem.write((s + len).cast_mut(), b'\0');
-    }
-    len
-}
-
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(malloc(_)),
     export_c_func!(calloc(_, _)),
@@ -331,7 +240,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(atoi(_)),
     export_c_func!(atol(_)),
     export_c_func!(atof(_)),
-    export_c_func!(strtod(_, _)),
     export_c_func!(srand(_)),
     export_c_func!(rand()),
     export_c_func!(srandom(_)),
@@ -342,11 +250,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(exit(_)),
     export_c_func!(bsearch(_, _, _, _, _)),
     export_c_func!(strtof(_, _)),
-    export_c_func!(strtoul(_, _, _)),
-    export_c_func!(realpath(_, _)),
-    export_c_func_aliased!("realpath$DARWIN_EXTSN", realpath(_, _)),
-    export_c_func!(mbstowcs(_, _, _)),
-    export_c_func!(wcstombs(_, _, _)),
 ];
 
 /// Returns a tuple containing the parsed number and the length of the number in
@@ -379,28 +282,6 @@ fn atof_inner(env: &mut Environment, s: ConstPtr<u8>) -> Result<(f64, u32), <f64
         while env.mem.read(start + len).is_ascii_digit() {
             len += 1;
         }
-    }
-
-    let s = std::str::from_utf8(env.mem.bytes_at(start, len)).unwrap();
-    s.parse().map(|result| (result, whitespace_len + len))
-}
-
-pub fn atoi_inner(
-    env: &mut Environment,
-    s: ConstPtr<u8>,
-) -> Result<(i32, u32), <i32 as FromStr>::Err> {
-    // atoi() doesn't work with a null-terminated string, instead it stops
-    // once it hits something that's not a digit, so we have to do some parsing
-    // ourselves.
-    let start = skip_whitespace(env, s);
-    let whitespace_len = Ptr::to_bits(start) - Ptr::to_bits(s);
-    let mut len = 0;
-    let maybe_sign = env.mem.read(start + len);
-    if maybe_sign == b'+' || maybe_sign == b'-' || maybe_sign.is_ascii_digit() {
-        len += 1;
-    }
-    while env.mem.read(start + len).is_ascii_digit() {
-        len += 1;
     }
 
     let s = std::str::from_utf8(env.mem.bytes_at(start, len)).unwrap();

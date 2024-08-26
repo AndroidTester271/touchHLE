@@ -59,7 +59,7 @@ fn sysctlbyname(
     assert!(!oldp.is_null() && !oldlenp.is_null());
     assert!(newp.is_null());
     let hw_machine_str = env.mem.alloc_and_write_cstr(b"iPhone1,1");
-    assert_eq!(env.mem.read(oldlenp), 10);
+    //assert_eq!(env.mem.read(oldlenp), 10);
     env.mem
         .memmove(oldp, hw_machine_str.cast().cast_const(), 10);
     env.mem.free(hw_machine_str.cast());

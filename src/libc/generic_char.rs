@@ -142,33 +142,6 @@ impl<T: Copy + Default + Eq + Ord + SafeRead + Debug> GenericChar<T> {
         dest
     }
 
-    pub(super) fn strcspn(
-        env: &mut Environment,
-        s: ConstPtr<T>,
-        charset: ConstPtr<T>,
-    ) -> GuestUSize {
-        let mut i = 0;
-        loop {
-            let c = env.mem.read(s + i);
-            if c == Self::null() {
-                break;
-            }
-            let mut j = 0;
-            loop {
-                let cc = env.mem.read(charset + j);
-                if c == cc {
-                    return i;
-                }
-                if cc == Self::null() {
-                    break;
-                }
-                j += 1;
-            }
-            i += 1;
-        }
-        i
-    }
-
     pub(super) fn strncpy(
         env: &mut Environment,
         dest: MutPtr<T>,
@@ -291,54 +264,28 @@ impl<T: Copy + Default + Eq + Ord + SafeRead + Debug> GenericChar<T> {
     }
 
     pub(super) fn strchr(env: &mut Environment, string: ConstPtr<T>, char: T) -> ConstPtr<T> {
-        let len = Self::strlen(env, string);
         let mut offset = 0;
         loop {
-            // if c is '\0', the function should locate the terminating '\0'
-            if env.mem.read(string + offset) == char {
-                return string + offset;
-            }
-            if offset == len {
+            if offset == Self::strlen(env, string) {
                 return Ptr::null();
             }
             offset += 1;
+            if env.mem.read(string + offset) == char {
+                return string + offset;
+            }
         }
     }
 
     pub(super) fn strrchr(env: &mut Environment, string: ConstPtr<T>, char: T) -> ConstPtr<T> {
         let mut offset = Self::strlen(env, string);
         loop {
-            if env.mem.read(string + offset) == char {
-                return string + offset;
-            }
             if offset == 0 {
                 return Ptr::null();
             }
             offset -= 1;
-        }
-    }
-
-    pub(super) fn strlcpy(
-        env: &mut Environment,
-        dst: MutPtr<T>,
-        src: ConstPtr<T>,
-        size: GuestUSize,
-    ) -> GuestUSize {
-        let mut i = 0;
-        loop {
-            let c = env.mem.read(src + i);
-
-            match i.cmp(&(size - 1)) {
-                Ordering::Less => env.mem.write(dst + i, c),
-                Ordering::Equal => env.mem.write(dst + i, Self::null()),
-                _ => {}
+            if env.mem.read(string + offset) == char {
+                return string + offset;
             }
-
-            if c == Self::null() {
-                break;
-            }
-            i += 1;
         }
-        i
     }
 }

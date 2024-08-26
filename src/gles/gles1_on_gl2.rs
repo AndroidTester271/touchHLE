@@ -35,6 +35,8 @@ use std::ffi::CStr;
 /// Note: There can be arbitrarily many lights or clip planes, depending on
 /// implementation limits. We might eventually need to check those rather than
 /// just providing the minimum.
+///
+/// TODO: GL_POINT_SPRITE_OES?
 pub const CAPABILITIES: &[GLenum] = &[
     gl21::ALPHA_TEST,
     gl21::BLEND,
@@ -66,8 +68,6 @@ pub const CAPABILITIES: &[GLenum] = &[
     gl21::SCISSOR_TEST,
     gl21::STENCIL_TEST,
     gl21::TEXTURE_2D,
-    // Same as POINT_SPRITE_OES from the GLES extension
-    gl21::POINT_SPRITE,
 ];
 
 pub struct ArrayInfo {
@@ -75,13 +75,13 @@ pub struct ArrayInfo {
     /// `glGetBoolean`.
     pub name: GLenum,
     /// Buffer binding enum for `glGetInteger`.
-    pub buffer_binding: GLenum,
+    buffer_binding: GLenum,
     /// Size enum for `glGetInteger`.
     size: Option<GLenum>,
     /// Stride enum for `glGetInteger`.
     stride: GLenum,
     /// Pointer enum for `glGetPointer`.
-    pub pointer: GLenum,
+    pointer: GLenum,
 }
 
 struct ArrayStateBackup {
@@ -196,7 +196,6 @@ const GET_PARAMS: ParamTable = ParamTable(&[
     (gl21::MAX_LIGHTS, ParamType::Int, 1),
     (gl21::MAX_MODELVIEW_STACK_DEPTH, ParamType::Int, 1),
     (gl21::MAX_PROJECTION_STACK_DEPTH, ParamType::Int, 1),
-    (gl21::MAX_TEXTURE_MAX_ANISOTROPY_EXT, ParamType::Float, 1),
     (gl21::MAX_TEXTURE_SIZE, ParamType::Int, 1),
     (gl21::MAX_TEXTURE_STACK_DEPTH, ParamType::Int, 1),
     (gl21::MAX_TEXTURE_UNITS, ParamType::Int, 1),
@@ -221,7 +220,6 @@ const GET_PARAMS: ParamTable = ParamTable(&[
     (gl21::POINT_SIZE_RANGE, ParamType::Float, 2),
     (gl21::POINT_SMOOTH, ParamType::Boolean, 2),
     (gl21::POINT_SMOOTH_HINT, ParamType::Int, 2),
-    (gl21::POINT_SPRITE, ParamType::Boolean, 1),
     (gl21::POLYGON_OFFSET_FACTOR, ParamType::Float, 1),
     (gl21::POLYGON_OFFSET_FILL, ParamType::Boolean, 1),
     (gl21::POLYGON_OFFSET_UNITS, ParamType::Float, 1),
@@ -273,18 +271,6 @@ const GET_PARAMS: ParamTable = ParamTable(&[
     (gl21::RENDERBUFFER_BINDING_EXT, ParamType::Int, 1),
     // EXT_texture_lod_bias
     (gl21::MAX_TEXTURE_LOD_BIAS_EXT, ParamType::Float, 1),
-    // OES_matrix_palette -> ARB_matrix_palette
-    (gl21::MAX_PALETTE_MATRICES_ARB, ParamType::Int, 1),
-    // OES_matrix_palette -> ARB_vertex_blend
-    (gl21::MAX_VERTEX_UNITS_ARB, ParamType::Int, 1),
-]);
-
-const POINT_PARAMS: ParamTable = ParamTable(&[
-    (gl21::POINT_SIZE_MIN, ParamType::Float, 1),
-    (gl21::POINT_SIZE_MAX, ParamType::Float, 1),
-    (gl21::POINT_DISTANCE_ATTENUATION, ParamType::Float, 3),
-    (gl21::POINT_FADE_THRESHOLD_SIZE, ParamType::Float, 1),
-    (gl21::POINT_SMOOTH, ParamType::Boolean, 1),
 ]);
 
 /// Table of `glFog` parameters shared by OpenGL ES 1.1 and OpenGL 2.1.
@@ -326,9 +312,8 @@ const MATERIAL_PARAMS: ParamTable = ParamTable(&[
 
 /// Table of `glTexEnv` parameters for the `GL_TEXTURE_ENV` target shared by
 /// OpenGL ES 1.1 and OpenGL 2.1.
-const TEX_ENV_PARAMS: ParamTable = ParamTable(&[
+pub const TEX_ENV_PARAMS: ParamTable = ParamTable(&[
     (gl21::TEXTURE_ENV_MODE, ParamType::Int, 1),
-    (gl21::COORD_REPLACE, ParamType::Int, 1),
     (gl21::COMBINE_RGB, ParamType::Int, 1),
     (gl21::COMBINE_ALPHA, ParamType::Int, 1),
     (gl21::SRC0_RGB, ParamType::Int, 1),
@@ -347,6 +332,24 @@ const TEX_ENV_PARAMS: ParamTable = ParamTable(&[
     (gl21::RGB_SCALE, ParamType::Float, 1),
     (gl21::ALPHA_SCALE, ParamType::Float, 1),
 ]);
+
+pub const TEX_ENV_INT_PARAMS_DEFAULTS: &[(GLenum, GLenum)] = &[
+    (gl21::TEXTURE_ENV_MODE, gl21::MODULATE),
+    (gl21::COMBINE_RGB, gl21::MODULATE),
+    (gl21::COMBINE_ALPHA, gl21::MODULATE),
+    (gl21::SRC0_RGB, gl21::TEXTURE),
+    (gl21::SRC1_RGB, gl21::PREVIOUS),
+    (gl21::SRC2_RGB, gl21::CONSTANT),
+    (gl21::SRC0_ALPHA, gl21::TEXTURE),
+    (gl21::SRC1_ALPHA, gl21::PREVIOUS),
+    (gl21::SRC2_ALPHA, gl21::CONSTANT),
+    (gl21::OPERAND0_RGB, gl21::SRC_COLOR),
+    (gl21::OPERAND1_RGB, gl21::SRC_COLOR),
+    (gl21::OPERAND2_RGB, gl21::SRC_ALPHA),
+    (gl21::OPERAND0_ALPHA, gl21::SRC_ALPHA),
+    (gl21::OPERAND1_ALPHA, gl21::SRC_ALPHA),
+    (gl21::OPERAND2_ALPHA, gl21::SRC_ALPHA),
+];
 
 /// Table of `glTexParameter` parameters.
 const TEX_PARAMS: ParamTable = ParamTable(&[
@@ -541,6 +544,36 @@ impl GLES1OnGL2 {
             }
         }
     }
+
+    /// If fog is enabled, check if the values for start and end distances
+    /// are equal, or start distance is greater than end distance.
+    /// Apple platforms (even modern Mac OS) seem to handle that gracefully,
+    /// however, both Windows and Android have issues in those cases.
+    /// This workaround is required so Doom 2 RPG renders correctly.
+    /// It prevents divisions by zero in levels where fog is used and both
+    /// values are set to 10000.
+    unsafe fn clamp_fog_state_values(&mut self) -> Option<(f32, f32)> {
+        let mut fogEnabled: GLboolean = 0;
+        gl21::GetBooleanv(gl21::FOG, &mut fogEnabled);
+        if fogEnabled != 0 {
+            let mut fogStart: GLfloat = 0.0;
+            let mut fogEnd: GLfloat = 0.0;
+            gl21::GetFloatv(gl21::FOG_START, &mut fogStart);
+            gl21::GetFloatv(gl21::FOG_END, &mut fogEnd);
+            if fogStart == fogEnd {
+                let newFogStart = fogEnd - 0.001;
+                gl21::Fogf(gl21::FOG_START, newFogStart);
+                return Some((fogStart, fogEnd));
+            }
+        }
+        None
+    }
+    unsafe fn restore_fog_state_values(&mut self, from_backup: Option<(f32, f32)>) {
+        if let Some((fogStart, fogEnd)) = from_backup {
+            gl21::Fogf(gl21::FOG_START, fogStart);
+            gl21::Fogf(gl21::FOG_END, fogEnd);
+        }
+    }
 }
 impl GLES for GLES1OnGL2 {
     fn description() -> &'static str {
@@ -587,9 +620,7 @@ impl GLES for GLES1OnGL2 {
         gl21::Enable(cap);
     }
     unsafe fn IsEnabled(&mut self, cap: GLenum) -> GLboolean {
-        assert!(
-            CAPABILITIES.contains(&cap) || ARRAYS.iter().any(|&ArrayInfo { name, .. }| name == cap)
-        );
+        assert!(CAPABILITIES.contains(&cap));
         gl21::IsEnabled(cap)
     }
     unsafe fn Disable(&mut self, cap: GLenum) {
@@ -608,7 +639,7 @@ impl GLES for GLES1OnGL2 {
         gl21::EnableClientState(array);
     }
     unsafe fn DisableClientState(&mut self, array: GLenum) {
-        assert!(ARRAYS.iter().any(|&ArrayInfo { name, .. }| name == array));
+        //assert!(ARRAYS.iter().any(|&ArrayInfo { name, .. }| name == array));
         gl21::DisableClientState(array);
     }
     unsafe fn GetBooleanv(&mut self, pname: GLenum, params: *mut GLboolean) {
@@ -629,6 +660,12 @@ impl GLES for GLES1OnGL2 {
         // TODO: type conversion
         assert!(type_ == ParamType::Int);
         gl21::GetIntegerv(pname, params);
+    }
+    unsafe fn GetTexEnvfv(&mut self, target: GLenum, pname: GLenum, params: *mut GLfloat) {
+        let (type_, _count) = TEX_ENV_PARAMS.get_type_info(pname);
+        assert!(type_ == ParamType::Float);
+        assert_eq!(target, gl21::TEXTURE_ENV);
+        gl21::GetTexEnvfv(target, pname, params);
     }
     unsafe fn GetTexEnviv(&mut self, target: GLenum, pname: GLenum, params: *mut GLint) {
         let (type_, _count) = TEX_ENV_PARAMS.get_type_info(pname);
@@ -778,36 +815,6 @@ impl GLES for GLES1OnGL2 {
         gl21::LineWidth(fixed_to_float(val))
     }
 
-    // Points
-    unsafe fn PointSize(&mut self, size: GLfloat) {
-        gl21::PointSize(size)
-    }
-    unsafe fn PointSizex(&mut self, size: GLfixed) {
-        gl21::PointSize(fixed_to_float(size))
-    }
-    unsafe fn PointParameterf(&mut self, pname: GLenum, param: GLfloat) {
-        gl21::PointParameterf(pname, param)
-    }
-    unsafe fn PointParameterx(&mut self, pname: GLenum, param: GLfixed) {
-        POINT_PARAMS.setx(
-            |param| gl21::PointParameterf(pname, param),
-            |_| unreachable!(), // no integer parameters exist
-            pname,
-            param,
-        );
-    }
-    unsafe fn PointParameterfv(&mut self, pname: GLenum, params: *const GLfloat) {
-        gl21::PointParameterfv(pname, params)
-    }
-    unsafe fn PointParameterxv(&mut self, pname: GLenum, params: *const GLfixed) {
-        POINT_PARAMS.setxv(
-            |params| gl21::PointParameterfv(pname, params),
-            |_| unreachable!(), // no integer parameters exist
-            pname,
-            params,
-        );
-    }
-
     // Lighting and materials
     unsafe fn Fogf(&mut self, pname: GLenum, param: GLfloat) {
         FOG_PARAMS.assert_component_count(pname, 1);
@@ -856,12 +863,6 @@ impl GLES for GLES1OnGL2 {
             pname,
             params,
         )
-    }
-    unsafe fn LightModelf(&mut self, pname: GLenum, param: GLfloat) {
-        gl21::LightModelf(pname, param)
-    }
-    unsafe fn LightModelfv(&mut self, pname: GLenum, params: *const GLfloat) {
-        gl21::LightModelfv(pname, params)
     }
     unsafe fn Materialf(&mut self, face: GLenum, pname: GLenum, param: GLfloat) {
         assert!(face == gl21::FRONT_AND_BACK);
@@ -1039,10 +1040,12 @@ impl GLES for GLES1OnGL2 {
         ]
         .contains(&mode));
 
+        let fog_state_backup = self.clamp_fog_state_values();
         let fixed_point_arrays_state_backup = self.translate_fixed_point_arrays(first, count);
 
         gl21::DrawArrays(mode, first, count);
 
+        self.restore_fog_state_values(fog_state_backup);
         self.restore_fixed_point_arrays(fixed_point_arrays_state_backup);
     }
     unsafe fn DrawElements(
@@ -1064,6 +1067,7 @@ impl GLES for GLES1OnGL2 {
         .contains(&mode));
         assert!(type_ == gl21::UNSIGNED_BYTE || type_ == gl21::UNSIGNED_SHORT);
 
+        let fog_state_backup = self.clamp_fog_state_values();
         let fixed_point_arrays_state_backup =
             if self.pointer_is_fixed_point.iter().any(|&is_fixed| is_fixed) {
                 // Scan the index buffer to find the range of data that may need
@@ -1119,6 +1123,7 @@ impl GLES for GLES1OnGL2 {
 
         gl21::DrawElements(mode, count, type_, indices);
 
+        self.restore_fog_state_values(fog_state_backup);
         if let Some(fixed_point_arrays_state_backup) = fixed_point_arrays_state_backup {
             self.restore_fixed_point_arrays(fixed_point_arrays_state_backup);
         }
@@ -1262,7 +1267,6 @@ impl GLES for GLES1OnGL2 {
                 || format == gl21::RGBA
                 || format == gl21::LUMINANCE
                 || format == gl21::LUMINANCE_ALPHA
-                || format == gl21::BGRA
         );
         assert!(
             type_ == gl21::UNSIGNED_BYTE
@@ -1446,6 +1450,7 @@ impl GLES for GLES1OnGL2 {
         gl21::CopyTexSubImage2D(target, level, xoffset, yoffset, x, y, width, height)
     }
     unsafe fn TexEnvf(&mut self, target: GLenum, pname: GLenum, param: GLfloat) {
+        // TODO: GL_POINT_SPRITE_OES
         match target {
             gl21::TEXTURE_ENV => {
                 TEX_ENV_PARAMS.assert_component_count(pname, 1);
@@ -1455,14 +1460,11 @@ impl GLES for GLES1OnGL2 {
                 assert!(pname == gl21::TEXTURE_LOD_BIAS_EXT);
                 gl21::TexEnvf(target, pname, param)
             }
-            gl21::POINT_SPRITE => {
-                assert!(pname == gl21::COORD_REPLACE);
-                gl21::TexEnvf(target, pname, param)
-            }
-            _ => unimplemented!("TexEnvf target {}", target.to_string()),
+            _ => unimplemented!(),
         }
     }
     unsafe fn TexEnvx(&mut self, target: GLenum, pname: GLenum, param: GLfixed) {
+        // TODO: GL_POINT_SPRITE_OES
         match target {
             gl21::TEXTURE_ENV => TEX_ENV_PARAMS.setx(
                 |param| gl21::TexEnvf(target, pname, param),
@@ -1474,14 +1476,11 @@ impl GLES for GLES1OnGL2 {
                 assert!(pname == gl21::TEXTURE_LOD_BIAS_EXT);
                 gl21::TexEnvf(target, pname, fixed_to_float(param))
             }
-            gl21::POINT_SPRITE => {
-                assert!(pname == gl21::COORD_REPLACE);
-                gl21::TexEnvf(target, pname, fixed_to_float(param))
-            }
             _ => unimplemented!(),
         }
     }
     unsafe fn TexEnvi(&mut self, target: GLenum, pname: GLenum, param: GLint) {
+        // TODO: GL_POINT_SPRITE_OES
         match target {
             gl21::TEXTURE_ENV => {
                 TEX_ENV_PARAMS.assert_component_count(pname, 1);
@@ -1491,24 +1490,11 @@ impl GLES for GLES1OnGL2 {
                 assert!(pname == gl21::TEXTURE_LOD_BIAS_EXT);
                 gl21::TexEnvi(target, pname, param)
             }
-            gl21::POINT_SPRITE => {
-                assert!(pname == gl21::COORD_REPLACE);
-                gl21::TexEnvi(target, pname, param)
-            }
-            gl21::TEXTURE_2D => {
-                // This is not a valid TexEnvi target, but we a tolerating it
-                // for a Rayman 2 case.
-                assert!(pname == gl21::TEXTURE_ENV_MODE);
-                log_dbg!(
-                    "Tolerating glTexEnvi(GL_TEXTURE_2D, TEXTURE_ENV_MODE, {})",
-                    param
-                );
-                gl21::TexEnvi(target, pname, param)
-            }
-            _ => unimplemented!("target 0x{:X}, pname 0x{:X}", target, pname),
+            _ => unimplemented!(),
         }
     }
     unsafe fn TexEnvfv(&mut self, target: GLenum, pname: GLenum, params: *const GLfloat) {
+        // TODO: GL_POINT_SPRITE_OES
         match target {
             gl21::TEXTURE_ENV => {
                 TEX_ENV_PARAMS.assert_known_param(pname);
@@ -1518,14 +1504,11 @@ impl GLES for GLES1OnGL2 {
                 assert!(pname == gl21::TEXTURE_LOD_BIAS_EXT);
                 gl21::TexEnvfv(target, pname, params)
             }
-            gl21::POINT_SPRITE => {
-                assert!(pname == gl21::COORD_REPLACE);
-                gl21::TexEnvfv(target, pname, params)
-            }
             _ => unimplemented!(),
         }
     }
     unsafe fn TexEnvxv(&mut self, target: GLenum, pname: GLenum, params: *const GLfixed) {
+        // TODO: GL_POINT_SPRITE_OES
         match target {
             gl21::TEXTURE_ENV => TEX_ENV_PARAMS.setxv(
                 |params| gl21::TexEnvfv(target, pname, params),
@@ -1538,15 +1521,11 @@ impl GLES for GLES1OnGL2 {
                 let param = fixed_to_float(params.read());
                 gl21::TexEnvfv(target, pname, &param)
             }
-            gl21::POINT_SPRITE => {
-                assert!(pname == gl21::COORD_REPLACE);
-                let param = fixed_to_float(params.read());
-                gl21::TexEnvfv(target, pname, &param)
-            }
             _ => unimplemented!(),
         }
     }
     unsafe fn TexEnviv(&mut self, target: GLenum, pname: GLenum, params: *const GLint) {
+        // TODO: GL_POINT_SPRITE_OES
         match target {
             gl21::TEXTURE_ENV => {
                 TEX_ENV_PARAMS.assert_known_param(pname);
@@ -1554,10 +1533,6 @@ impl GLES for GLES1OnGL2 {
             }
             gl21::TEXTURE_FILTER_CONTROL_EXT => {
                 assert!(pname == gl21::TEXTURE_LOD_BIAS_EXT);
-                gl21::TexEnviv(target, pname, params)
-            }
-            gl21::POINT_SPRITE => {
-                assert!(pname == gl21::COORD_REPLACE);
                 gl21::TexEnviv(target, pname, params)
             }
             _ => unimplemented!(),

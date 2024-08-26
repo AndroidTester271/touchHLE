@@ -12,8 +12,8 @@ use crate::abi::{CallFromHost, GuestFunction};
 use crate::audio::decode_ima4;
 use crate::audio::openal as al;
 use crate::audio::openal::al_types::*;
+use crate::audio::openal::alc_types::*;
 use crate::dyld::{export_c_func, FunctionExports};
-use crate::frameworks::audio_toolbox::ContextManager;
 use crate::frameworks::carbon_core::OSStatus;
 use crate::frameworks::core_audio_types::{
     debug_fourcc, fourcc, kAudioFormatAppleIMA4, kAudioFormatFlagIsBigEndian,
@@ -35,10 +35,46 @@ use std::collections::{HashMap, VecDeque};
 #[derive(Default)]
 pub struct State {
     audio_queues: HashMap<AudioQueueRef, AudioQueueHostObject>,
+    al_device_and_context: Option<(*mut ALCdevice, *mut ALCcontext)>,
 }
 impl State {
     fn get(framework_state: &mut crate::frameworks::State) -> &mut Self {
         &mut framework_state.audio_toolbox.audio_queue
+    }
+    fn make_al_context_current(&mut self) -> ContextManager {
+        if self.al_device_and_context.is_none() {
+            let device = unsafe { al::alcOpenDevice(std::ptr::null()) };
+            assert!(!device.is_null());
+            let context = unsafe { al::alcCreateContext(device, std::ptr::null()) };
+            assert!(!context.is_null());
+            log_dbg!(
+                "New internal OpenAL device ({:?}) and context ({:?})",
+                device,
+                context
+            );
+            self.al_device_and_context = Some((device, context));
+        }
+        let (device, context) = self.al_device_and_context.unwrap();
+        assert!(!device.is_null() && !context.is_null());
+
+        // This object will make sure the existing context, which will belong
+        // to the guest app, is restored once we're done.
+        ContextManager::make_active(context)
+    }
+}
+
+#[must_use]
+struct ContextManager(*mut ALCcontext);
+impl ContextManager {
+    pub fn make_active(new_context: *mut ALCcontext) -> ContextManager {
+        let old_context = unsafe { al::alcGetCurrentContext() };
+        assert!(unsafe { al::alcMakeContextCurrent(new_context) } == al::ALC_TRUE);
+        ContextManager(old_context)
+    }
+}
+impl Drop for ContextManager {
+    fn drop(&mut self) {
+        assert!(unsafe { al::alcMakeContextCurrent(self.0) } == al::ALC_TRUE)
     }
 }
 
@@ -112,7 +148,6 @@ type AudioQueuePropertyListenerProc = GuestFunction;
 
 const kAudioQueueErr_InvalidBuffer: OSStatus = -66687;
 const kAudioQueueErr_InvalidPropertySize: OSStatus = -66683;
-const kAudioQueueErr_BufferInQueue: OSStatus = -66679;
 
 pub fn AudioQueueNewOutput(
     env: &mut Environment,
@@ -153,7 +188,7 @@ pub fn AudioQueueNewOutput(
         volume: 1.0,
         buffers: Vec::new(),
         buffer_queue: VecDeque::new(),
-        is_running: AudioQueueIsRunning::Stopped,
+        is_running: AudioQueueIsRunning::Running,
         al_source: None,
         al_unused_buffers: Vec::new(),
         aq_is_running_proc: None,
@@ -214,7 +249,7 @@ pub fn AudioQueueSetParameter(
 
     host_object.volume = in_value;
     if let Some(al_source) = host_object.al_source {
-        let _context_manager = env.framework_state.audio_toolbox.make_al_context_current();
+        let _context_manager = state.make_al_context_current();
         unsafe {
             al::alSourcef(al_source, al::AL_MAX_GAIN, in_value);
             assert!(al::alGetError() == 0);
@@ -400,7 +435,6 @@ fn is_supported_audio_format(format: &AudioStreamBasicDescription) -> bool {
         format_flags,
         channels_per_frame,
         bits_per_channel,
-        bytes_per_frame,
         ..
     } = format;
     match format_id {
@@ -409,8 +443,7 @@ fn is_supported_audio_format(format: &AudioStreamBasicDescription) -> bool {
             // TODO: support more PCM formats
             (channels_per_frame == 1 || channels_per_frame == 2)
                 && (bits_per_channel == 8 || bits_per_channel == 16)
-                && ((format_flags & kAudioFormatFlagIsPacked) != 0
-                    || ((bits_per_channel / 8) * channels_per_frame) == bytes_per_frame)
+                && (format_flags & kAudioFormatFlagIsPacked) != 0
                 && (format_flags & kAudioFormatFlagIsBigEndian) == 0
                 && (format_flags & kAudioFormatFlagIsFloat) == 0
         }
@@ -495,10 +528,9 @@ fn prime_audio_queue(
     in_aq: AudioQueueRef,
     context_manager: Option<ContextManager>,
 ) -> ContextManager {
-    let context_manager = context_manager
-        .unwrap_or_else(|| env.framework_state.audio_toolbox.make_al_context_current());
-
     let state = State::get(&mut env.framework_state);
+
+    let context_manager = context_manager.unwrap_or_else(|| state.make_al_context_current());
     let host_object = state.audio_queues.get_mut(&in_aq).unwrap();
 
     if !is_supported_audio_format(&host_object.format) {
@@ -604,9 +636,9 @@ pub fn handle_audio_queue(env: &mut Environment, in_aq: AudioQueueRef) {
     // Collect used buffers and call the user callback so the app can provide
     // new buffers.
 
-    let context_manager = env.framework_state.audio_toolbox.make_al_context_current();
-
     let state = State::get(&mut env.framework_state);
+
+    let context_manager = state.make_al_context_current();
 
     let host_object = state.audio_queues.get_mut(&in_aq).unwrap();
     let Some(al_source) = host_object.al_source else {
@@ -737,8 +769,8 @@ pub fn AudioQueueStart(
         assert!(unsafe { al::alGetError() } == 0);
     } else {
         log!(
-            "AudioQueueStart: Unsupported format {:?}",
-            host_object.format
+            "AudioQueueStart: Unsupported format {}",
+            debug_fourcc(host_object.format.format_id)
         );
     }
 
@@ -750,9 +782,9 @@ pub fn AudioQueueStart(
 pub fn AudioQueuePause(env: &mut Environment, in_aq: AudioQueueRef) -> OSStatus {
     return_if_null!(in_aq);
 
-    let _context_manager = env.framework_state.audio_toolbox.make_al_context_current();
-
     let state = State::get(&mut env.framework_state);
+
+    let _context_manager = state.make_al_context_current();
 
     let host_object = state.audio_queues.get_mut(&in_aq).unwrap();
     // FIXME: is this correct? is it notifiable?
@@ -781,12 +813,13 @@ fn finish_stopping_audio_queue(env: &mut Environment, in_aq: AudioQueueRef) {
 pub fn AudioQueueStop(env: &mut Environment, in_aq: AudioQueueRef, in_immediate: bool) -> OSStatus {
     return_if_null!(in_aq);
 
+    let state = State::get(&mut env.framework_state);
+
     if in_immediate {
         log_dbg!("Performing immediate AudioQueueStop for {:?}.", in_aq);
 
-        let _context_manager = env.framework_state.audio_toolbox.make_al_context_current();
+        let _context_manager = state.make_al_context_current();
 
-        let state = State::get(&mut env.framework_state);
         let host_object = state.audio_queues.get_mut(&in_aq).unwrap();
         if let Some(al_source) = host_object.al_source {
             unsafe { al::alSourceStop(al_source) };
@@ -795,7 +828,6 @@ pub fn AudioQueueStop(env: &mut Environment, in_aq: AudioQueueRef, in_immediate:
 
         finish_stopping_audio_queue(env, in_aq);
     } else {
-        let state = State::get(&mut env.framework_state);
         let host_object = state.audio_queues.get_mut(&in_aq).unwrap();
         if host_object.is_running != AudioQueueIsRunning::Stopped {
             log_dbg!("Starting asynchronous AudioQueueStop for {:?}.", in_aq);
@@ -814,11 +846,11 @@ pub fn AudioQueueStop(env: &mut Environment, in_aq: AudioQueueRef, in_immediate:
 fn AudioQueueReset(env: &mut Environment, in_aq: AudioQueueRef) -> OSStatus {
     return_if_null!(in_aq);
 
-    let _context_manager = env.framework_state.audio_toolbox.make_al_context_current();
-
     let state = State::get(&mut env.framework_state);
 
     log_dbg!("Resetting queue {:?}.", in_aq);
+
+    let _context_manager = state.make_al_context_current();
 
     let host_object = state.audio_queues.get_mut(&in_aq).unwrap();
 
@@ -859,9 +891,7 @@ fn AudioQueueFreeBuffer(
         .get_mut(&in_aq)
         .unwrap();
 
-    if host_object.buffer_queue.contains(&in_buffer) {
-        return kAudioQueueErr_BufferInQueue;
-    }
+    assert!(!host_object.buffer_queue.contains(&in_buffer));
 
     if let Some(index) = host_object.buffers.iter().position(|x| x == &in_buffer) {
         host_object.buffers.remove(index);
@@ -901,7 +931,7 @@ pub fn AudioQueueDispose(
     }
 
     if let Some(al_source) = host_object.al_source {
-        let _context_manager = env.framework_state.audio_toolbox.make_al_context_current();
+        let _context_manager = state.make_al_context_current();
 
         unsafe {
             al::alSourceStop(al_source);

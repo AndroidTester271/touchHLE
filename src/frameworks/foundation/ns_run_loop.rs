@@ -90,16 +90,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (())addTimer:(id)timer // NSTimer*
        forMode:(NSRunLoopMode)mode {
     let default_mode = ns_string::get_static_str(env, NSDefaultRunLoopMode);
-    let common_modes = ns_string::get_static_str(env, NSRunLoopCommonModes);
-    // TODO: handle other modes
-    assert!(msg![env; mode isEqualToString:default_mode] || msg![env; mode isEqualToString:common_modes]);
+    // // TODO: handle other modes
+    // assert!(msg![env; mode isEqualToString:default_mode]);
 
-    log_dbg!(
-        "Adding timer {:?} to run loop {:?} with mode {:?}",
-        timer,
-        this,
-        ns_string::to_rust_string(env, mode),
-    );
+    log_dbg!("Adding timer {:?} to run loop {:?}", timer, this);
 
     retain(env, timer);
 

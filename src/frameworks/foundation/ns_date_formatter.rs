@@ -61,8 +61,9 @@ pub const CLASSES: ClassExports = objc_classes! {
     format = format.replace("ss", format!("{:02}", second).as_str());
 
     for c in format.chars() {
-        if let pattern @ ('A'..='Z' | 'a'..='z') = c {
-            unimplemented!("date string contains unsubstituted format pattern: {pattern}");
+        match c {
+            'A'..='Z' | 'a'..='z' => unimplemented!("date string contains unsubstituted format patterns {:?}", format),
+            _ => {}
         }
     }
     log_dbg!("date_format after: {:?}", format);

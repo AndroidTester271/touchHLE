@@ -93,13 +93,6 @@ fn wcscpy(env: &mut Environment, dest: MutPtr<wchar_t>, src: ConstPtr<wchar_t>) 
 fn wcscat(env: &mut Environment, dest: MutPtr<wchar_t>, src: ConstPtr<wchar_t>) -> MutPtr<wchar_t> {
     GenericChar::<wchar_t>::strcat(env, dest, src, GuestUSize::MAX)
 }
-fn wcscspn(
-    env: &mut Environment,
-    str: ConstPtr<wchar_t>,
-    charset: ConstPtr<wchar_t>,
-) -> GuestUSize {
-    GenericChar::<wchar_t>::strcspn(env, str, charset)
-}
 fn wcsncpy(
     env: &mut Environment,
     dest: MutPtr<wchar_t>,
@@ -143,14 +136,6 @@ fn wcschr(env: &mut Environment, wcsing: ConstPtr<wchar_t>, wchar: wchar_t) -> C
 fn wcsrchr(env: &mut Environment, wcsing: ConstPtr<wchar_t>, wchar: wchar_t) -> ConstPtr<wchar_t> {
     GenericChar::<wchar_t>::strrchr(env, wcsing, wchar)
 }
-fn wcslcpy(
-    env: &mut Environment,
-    dst: MutPtr<wchar_t>,
-    src: ConstPtr<wchar_t>,
-    size: GuestUSize,
-) -> GuestUSize {
-    GenericChar::<wchar_t>::strlcpy(env, dst, src, size)
-}
 
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(btowc(_)),
@@ -164,7 +149,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(wcslen(_)),
     export_c_func!(wcscpy(_, _)),
     export_c_func!(wcscat(_, _)),
-    export_c_func!(wcscspn(_, _)),
     export_c_func!(wcsncpy(_, _, _)),
     export_c_func!(wcsdup(_)),
     export_c_func!(wcscmp(_, _)),
@@ -173,5 +157,4 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(wcsstr(_, _)),
     export_c_func!(wcschr(_, _)),
     export_c_func!(wcsrchr(_, _)),
-    export_c_func!(wcslcpy(_, _, _)),
 ];

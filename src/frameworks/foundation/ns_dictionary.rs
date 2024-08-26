@@ -5,10 +5,12 @@
  */
 //! The `NSDictionary` class cluster, including `NSMutableDictionary`.
 
+use super::ns_enumerator::NSFastEnumerationState;
 use super::ns_property_list_serialization::deserialize_plist_from_file;
-use super::{ns_string, ns_url, NSUInteger};
+use super::{ns_array, ns_string, ns_url, NSUInteger};
 use crate::abi::VaList;
 use crate::fs::GuestPath;
+use crate::mem::MutPtr;
 use crate::objc::{
     autorelease, id, msg, msg_class, nil, objc_classes, release, retain, ClassExports, HostObject,
     NSZonePtr,
@@ -219,11 +221,91 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (NSUInteger)count {
     env.objc.borrow::<DictionaryHostObject>(this).count
 }
+- (id)valueForKey:(id)key {
+    let key_str = ns_string::to_rust_string(env, key);
+    assert!(!key_str.starts_with('@'));
+    msg![env; this objectForKey:key]
+}
 - (id)objectForKey:(id)key {
     let host_obj: DictionaryHostObject = std::mem::take(env.objc.borrow_mut(this));
     let res = host_obj.lookup(env, key);
     *env.objc.borrow_mut(this) = host_obj;
     res
+}
+
+- (id)allKeys {
+    let dict_host_obj: DictionaryHostObject = std::mem::take(env.objc.borrow_mut(this));
+    let keys: Vec<id> = dict_host_obj.iter_keys().collect();
+    ns_array::from_vec(env, keys)
+}
+
+@end
+
+@implementation NSMutableDictionary: _touchHLE_NSDictionary
+
++ (id)dictionaryWithCapacity:(NSUInteger)_capacity {
+    msg_class![env; NSMutableDictionary dictionary]
+}
+
+- (())setValue:(id)value
+        forKey:(id)key { // NSString*
+    assert!(!key.is_null());
+    let mut host_obj: DictionaryHostObject = std::mem::take(env.objc.borrow_mut(this));
+    host_obj.insert(env, key, value, false);
+    *env.objc.borrow_mut(this) = host_obj;
+}
+
+- (())setObject:(id)anObject
+         forKey:(id)key { // NSString*
+    assert!(!anObject.is_null());
+    assert!(anObject != nil);
+    assert!(!key.is_null());
+    assert!(key != nil);
+    let mut host_obj: DictionaryHostObject = std::mem::take(env.objc.borrow_mut(this));
+    host_obj.insert(env, key, anObject, false);
+    *env.objc.borrow_mut(this) = host_obj;
+}
+
+// NSFastEnumeration implementation
+- (NSUInteger)countByEnumeratingWithState:(MutPtr<NSFastEnumerationState>)state
+                                  objects:(MutPtr<id>)stackbuf
+                                    count:(NSUInteger)len {
+    let host_object = env.objc.borrow::<DictionaryHostObject>(this);
+
+    if host_object.count == 0 {
+        return 0;
+    }
+
+    let NSFastEnumerationState {
+        state: start_index,
+        ..
+    } = env.mem.read(state);
+
+    let mut dict_iter = host_object.map.iter();
+    if start_index >= 1 {
+       _ = dict_iter.nth((start_index-1).try_into().unwrap());
+    }
+
+    let mut batch_count = 0;
+    while batch_count < len {
+        if let Some((_, &ref object)) = dict_iter.next() {
+            let object = object.get(0).unwrap().0;
+            env.mem.write(stackbuf + batch_count, object);
+            batch_count += 1;
+        } else {
+            break;
+        }
+    }
+    env.mem.write(state, NSFastEnumerationState {
+        state: start_index + batch_count,
+        items_ptr: stackbuf,
+        // can be anything as long as it's dereferenceable and the same
+        // each iteration
+        // Note: stackbuf can be different each time, it's better to return self pointer
+        mutations_ptr: this.cast(),
+        extra: Default::default(),
+    });
+    batch_count
 }
 
 @end

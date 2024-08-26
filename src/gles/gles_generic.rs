@@ -50,6 +50,7 @@ pub trait GLES {
     unsafe fn GetBooleanv(&mut self, pname: GLenum, params: *mut GLboolean);
     unsafe fn GetFloatv(&mut self, pname: GLenum, params: *mut GLfloat);
     unsafe fn GetIntegerv(&mut self, pname: GLenum, params: *mut GLint);
+    unsafe fn GetTexEnvfv(&mut self, target: GLenum, pname: GLenum, params: *mut GLfloat);
     unsafe fn GetTexEnviv(&mut self, target: GLenum, pname: GLenum, params: *mut GLint);
     unsafe fn GetPointerv(&mut self, pname: GLenum, params: *mut *const GLvoid);
     unsafe fn Hint(&mut self, target: GLenum, mode: GLenum);
@@ -81,14 +82,6 @@ pub trait GLES {
     unsafe fn LineWidth(&mut self, val: GLfloat);
     unsafe fn LineWidthx(&mut self, val: GLfixed);
 
-    // Points
-    unsafe fn PointSize(&mut self, size: GLfloat);
-    unsafe fn PointSizex(&mut self, size: GLfixed);
-    unsafe fn PointParameterf(&mut self, pname: GLenum, param: GLfloat);
-    unsafe fn PointParameterx(&mut self, pname: GLenum, param: GLfixed);
-    unsafe fn PointParameterfv(&mut self, pname: GLenum, params: *const GLfloat);
-    unsafe fn PointParameterxv(&mut self, pname: GLenum, params: *const GLfixed);
-
     // Lighting and materials
     unsafe fn Fogf(&mut self, pname: GLenum, param: GLfloat);
     unsafe fn Fogx(&mut self, pname: GLenum, param: GLfixed);
@@ -98,8 +91,6 @@ pub trait GLES {
     unsafe fn Lightx(&mut self, light: GLenum, pname: GLenum, param: GLfixed);
     unsafe fn Lightfv(&mut self, light: GLenum, pname: GLenum, params: *const GLfloat);
     unsafe fn Lightxv(&mut self, light: GLenum, pname: GLenum, params: *const GLfixed);
-    unsafe fn LightModelf(&mut self, pname: GLenum, param: GLfloat);
-    unsafe fn LightModelfv(&mut self, pname: GLenum, params: *const GLfloat);
     unsafe fn Materialf(&mut self, face: GLenum, pname: GLenum, param: GLfloat);
     unsafe fn Materialx(&mut self, face: GLenum, pname: GLenum, param: GLfixed);
     unsafe fn Materialfv(&mut self, face: GLenum, pname: GLenum, params: *const GLfloat);

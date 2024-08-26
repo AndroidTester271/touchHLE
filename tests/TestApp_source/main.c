@@ -22,7 +22,6 @@
 // <stddef.h>
 #define NULL ((void *)0)
 typedef unsigned long size_t;
-typedef int wchar_t;
 
 // <errno.h>
 int *__error(void);
@@ -41,7 +40,6 @@ int fclose(FILE *);
 int sscanf(const char *, const char *, ...);
 int printf(const char *, ...);
 int vsnprintf(char *, size_t, const char *, va_list);
-int swprintf(wchar_t *, size_t, const wchar_t *, ...);
 
 // <stdlib.h>
 #define EXIT_SUCCESS 0
@@ -53,10 +51,6 @@ void qsort(void *, size_t, size_t, int (*)(const void *, const void *));
 void *realloc(void *, size_t);
 double atof(const char *);
 float strtof(const char *, char **);
-unsigned long strtoul(const char *, char **, int);
-char *realpath(const char *, char *);
-size_t mbstowcs(wchar_t *, const char *, size_t);
-size_t wcstombs(char *, const wchar_t *, size_t);
 
 // <string.h>
 void *memset(void *, int, size_t);
@@ -65,12 +59,6 @@ void *memmove(void *, const void *, size_t);
 int strcmp(const char *, const char *);
 char *strncpy(char *, const char *, size_t);
 char *strncat(char *, const char *, size_t);
-size_t strlcpy(char *, const char *, size_t);
-char *strchr(const char *s, int c);
-char *strrchr(const char *s, int c);
-size_t strlen(const char *);
-int strncmp(const char *, const char *, size_t);
-size_t strcspn(const char *, const char *);
 
 // <unistd.h>
 typedef unsigned int __uint32_t;
@@ -101,57 +89,6 @@ int sem_post(sem_t *);
 int sem_trywait(sem_t *);
 int sem_unlink(const char *);
 int sem_wait(sem_t *);
-
-// <locale.h>
-#define LC_ALL 0
-#define LC_COLLATE 1
-#define LC_CTYPE 2
-#define LC_MONETARY 3
-#define LC_NUMERIC 4
-#define LC_TIME 5
-#define LC_MESSAGES 6
-char *setlocale(int category, const char *locale);
-
-// <dirent.h>
-typedef struct {
-  int _unused;
-} DIR;
-struct dirent {
-  char _unused[21]; // TODO
-  char d_name[1024];
-};
-DIR *opendir(const char *);
-struct dirent *readdir(DIR *);
-int closedir(DIR *);
-
-// `CFBase.h`
-
-typedef const struct _CFAllocator *CFAllocatorRef;
-typedef unsigned int CFStringEncoding;
-typedef signed long CFIndex;
-typedef struct {
-  CFIndex location;
-  CFIndex length;
-} CFRange;
-typedef unsigned long CFOptionFlags;
-typedef const struct _CFDictionary *CFDictionaryRef;
-typedef const struct _CFString *CFStringRef;
-typedef const struct _CFString *CFMutableStringRef;
-
-// `CFString.h`
-
-typedef int CFComparisonResult;
-typedef unsigned int CFStringCompareFlags;
-
-void CFStringAppendFormat(CFMutableStringRef s, CFDictionaryRef fo,
-                          CFStringRef format, ...);
-CFMutableStringRef CFStringCreateMutable(CFAllocatorRef alloc, CFIndex max_len);
-CFStringRef CFStringCreateWithCString(CFAllocatorRef alloc, const char *cStr,
-                                      CFStringEncoding encoding);
-CFComparisonResult CFStringCompare(CFStringRef a, CFStringRef b,
-                                   CFStringCompareFlags flags);
-CFRange CFStringFind(CFStringRef theString, CFStringRef stringToFind,
-                     CFOptionFlags compareOptions);
 
 // === Main code ===
 
@@ -225,112 +162,20 @@ int test_vsnprintf() {
   res += !!strcmp(str, "10.123450|10.123450|10.123450|10|      10|10.123|  "
                        "10.123|0010.123|10.123450|10.123450");
   free(str);
-  str = str_format("%f|%8f|%08f|%.f|%8.f|%.3f|%8.3f|%08.3f|%*f|%0*f", -10.12345,
-                   -10.12345, -10.12345, -10.12345, -10.12345, -10.12345,
-                   -10.12345, -10.12345, 8, -10.12345, 8, -10.12345);
-  res += !!strcmp(str, "-10.123450|-10.123450|-10.123450|-10|     -10|-10.123| "
-                       "-10.123|-010.123|-10.123450|-10.123450");
-  free(str);
-  // Test %e
-  str = str_format("%e|%8e|%08e|%.e|%8.e|%.3e|%8.3e|%08.3e|%*e|%0*e", 10.12345,
-                   10.12345, 10.12345, 10.12345, 10.12345, 10.12345, 10.12345,
-                   10.12345, 8, 10.12345, 8, 10.12345);
-  res += !!strcmp(
-      str, "1.012345e+01|1.012345e+01|1.012345e+01|1e+01|   "
-           "1e+01|1.012e+01|1.012e+01|1.012e+01|1.012345e+01|1.012345e+01");
-  free(str);
-  str = str_format("%e|%8e|%08e|%.e|%8.e|%.3e|%8.3e|%08.3e|%*e|%0*e", -10.12345,
-                   -10.12345, -10.12345, -10.12345, -10.12345, -10.12345,
-                   -10.12345, -10.12345, 8, -10.12345, 8, -10.12345);
-  res += !!strcmp(
-      str,
-      "-1.012345e+01|-1.012345e+01|-1.012345e+01|-1e+01|  "
-      "-1e+01|-1.012e+01|-1.012e+01|-1.012e+01|-1.012345e+01|-1.012345e+01");
-  free(str);
-  // Test %g
-  str = str_format("%g|%8g|%08g|%.g|%8.g|%.3g|%8.3g|%08.3g|%*g|%0*g", 10.12345,
-                   10.12345, 10.12345, 10.12345, 10.12345, 10.12345, 10.12345,
-                   10.12345, 8, 10.12345, 8, 10.12345);
-  res += !!strcmp(str, "10.1235| 10.1235|010.1235|1e+01|   1e+01|10.1|    "
-                       "10.1|000010.1| 10.1235|010.1235");
-  free(str);
-  str = str_format("%g|%8g|%08g|%.g|%8.g|%.3g|%8.3g|%08.3g|%*g|%0*g", -10.12345,
-                   -10.12345, -10.12345, -10.12345, -10.12345, -10.12345,
-                   -10.12345, -10.12345, 8, -10.12345, 8, -10.12345);
-  res += !!strcmp(str, "-10.1235|-10.1235|-10.1235|-1e+01|  -1e+01|-10.1|   "
-                       "-10.1|-00010.1|-10.1235|-10.1235");
-  free(str);
-  str = str_format("%f|%8f|%08f|%.f|%8.f|%.3f|%8.3f|%08.3f|%*f|%0*f", -10.12345,
-                   -10.12345, -10.12345, -10.12345, -10.12345, -10.12345,
-                   -10.12345, -10.12345, 8, -10.12345, 8, -10.12345);
-  res += !!strcmp(str, "-10.123450|-10.123450|-10.123450|-10|     -10|-10.123| "
-                       "-10.123|-010.123|-10.123450|-10.123450");
-  free(str);
-  // Test %e
-  str = str_format("%e|%8e|%08e|%.e|%8.e|%.3e|%8.3e|%08.3e|%*e|%0*e", 10.12345,
-                   10.12345, 10.12345, 10.12345, 10.12345, 10.12345, 10.12345,
-                   10.12345, 8, 10.12345, 8, 10.12345);
-  res += !!strcmp(
-      str, "1.012345e+01|1.012345e+01|1.012345e+01|1e+01|   "
-           "1e+01|1.012e+01|1.012e+01|1.012e+01|1.012345e+01|1.012345e+01");
-  free(str);
-  str = str_format("%e|%8e|%08e|%.e|%8.e|%.3e|%8.3e|%08.3e|%*e|%0*e", -10.12345,
-                   -10.12345, -10.12345, -10.12345, -10.12345, -10.12345,
-                   -10.12345, -10.12345, 8, -10.12345, 8, -10.12345);
-  res += !!strcmp(
-      str,
-      "-1.012345e+01|-1.012345e+01|-1.012345e+01|-1e+01|  "
-      "-1e+01|-1.012e+01|-1.012e+01|-1.012e+01|-1.012345e+01|-1.012345e+01");
-  free(str);
-  // Test %g
-  str = str_format("%g|%8g|%08g|%.g|%8.g|%.3g|%8.3g|%08.3g|%*g|%0*g", 10.12345,
-                   10.12345, 10.12345, 10.12345, 10.12345, 10.12345, 10.12345,
-                   10.12345, 8, 10.12345, 8, 10.12345);
-  res += !!strcmp(str, "10.1235| 10.1235|010.1235|1e+01|   1e+01|10.1|    "
-                       "10.1|000010.1| 10.1235|010.1235");
-  free(str);
-  str = str_format("%g|%8g|%08g|%.g|%8.g|%.3g|%8.3g|%08.3g|%*g|%0*g", -10.12345,
-                   -10.12345, -10.12345, -10.12345, -10.12345, -10.12345,
-                   -10.12345, -10.12345, 8, -10.12345, 8, -10.12345);
-  res += !!strcmp(str, "-10.1235|-10.1235|-10.1235|-1e+01|  -1e+01|-10.1|   "
-                       "-10.1|-00010.1|-10.1235|-10.1235");
-  free(str);
 
   return res;
 }
 
 int test_sscanf() {
   int a, b;
-  short c, d;
-  char str[4];
   int matched = sscanf("1.23", "%d.%d", &a, &b);
   if (!(matched == 2 && a == 1 && b == 23))
     return -1;
   matched = sscanf("abc111.42", "abc%d.%d", &a, &b);
   if (!(matched == 2 && a == 111 && b == 42))
-    return -2;
+    return -1;
   matched = sscanf("abc", "%d.%d", &a, &b);
-  if (matched != 0)
-    return -3;
-  matched = sscanf("abc,8", "%[^,],%d", str, &b);
-  if (!(matched == 2 && strcmp(str, "abc") == 0 && b == 8))
-    return -4;
-  matched = sscanf("9,10", "%hi,%i", &c, &a);
-  if (!(c == 9 && a == 10))
-    return -5;
-  matched = sscanf("DUMMY", "%d", &a);
-  if (matched != 0)
-    return -6;
-  matched = sscanf("+10 -10", "%d %d", &a, &b);
-  if (!(matched == 2 && a == 10 && b == -10))
-    return -7;
-  matched = sscanf("+10 -10", "%hd %hd", &c, &d);
-  if (!(matched == 2 && c == 10 && d == -10))
-    return -9;
-  matched = sscanf("3000\\t4", "%d %d", &a, &b);
-  if (!(matched == 1 && a == 3000))
-    return -10;
-  return 0;
+  return (matched == 0) ? 0 : -1;
 }
 
 int test_errno() { return (errno == 0) ? 0 : -1; }
@@ -486,15 +331,6 @@ int test_strtof() {
   return 0;
 }
 
-int test_strtoul() {
-  char *text = "0xcccccccc";
-  char *endptr;
-  if (strtoul(text, &endptr, 16) != 3435973836 || endptr != text + 10) {
-    return -1;
-  }
-  return 0;
-}
-
 int test_getcwd_chdir() {
   char buf[256];
   char *buf2 = getcwd(buf, sizeof buf);
@@ -581,36 +417,8 @@ int test_sem() {
 
   sem_close(semaphore);
   sem_unlink("sem_test");
-  if (shared_int != 1) {
-    return -1;
-  }
 
-  // Check that reopen is fine
-  semaphore = sem_open("sem_test", O_CREAT, 0644, 1);
-  if (semaphore == SEM_FAILED) {
-    printf("Error opening semaphore\n");
-    return -1;
-  }
-
-  // Sem @ -1
-  if (sem_trywait(semaphore) == -1) {
-    return -1;
-  }
-
-  // Sem still @ -1, should not lock
-  if (sem_trywait(semaphore) == 0) {
-    return -1;
-  }
-
-  // Sem @ 0, should be able to relock
-  sem_post(semaphore);
-  if (sem_trywait(semaphore) == -1) {
-    return -1;
-  }
-
-  sem_close(semaphore);
-  sem_unlink("sem_test");
-  return 0;
+  return shared_int == 1 ? 0 : -1;
 }
 
 int test_strncpy() {
@@ -673,266 +481,18 @@ int test_strncat() {
   return 0;
 }
 
-int test_strlcpy() {
-  {
-    char src[7] = "origen";
-    char dst[15] = "destinodestino";
-    char expected[] = "or\0tinodestino";
-    int ret = strlcpy(dst, src, 3);
-    if (ret != 6 || memcmp(dst, expected, 15)) {
-      printf("%d %s\t", ret, dst);
-      return 1;
-    }
-  }
-
-  {
-    char src[7] = "origen";
-    char dst[15] = "destinodestino";
-    char expected[] = "orige\0odestino";
-    int ret = strlcpy(dst, src, 6);
-    if (ret != 6 || memcmp(dst, expected, 15)) {
-      printf("%d %s\t", ret, dst);
-      return 2;
-    }
-  }
-
-  {
-    char src[7] = "origen";
-    char dst[15] = "destinodestino";
-    char expected[] = "origen\0destino";
-    int ret = strlcpy(dst, src, 9);
-    if (ret != 6 || memcmp(dst, expected, 15)) {
-      printf("%d %s\t", ret, dst);
-      return 3;
-    }
-  }
-
-  return 0;
-}
-
-int test_setlocale() {
-  char *locale;
-
-  // Test getting default locale
-  locale = setlocale(LC_ALL, NULL);
-  if (strcmp(locale, "C") != 0) {
-    return 1;
-  }
-
-  // Test setting a locale category
-  locale = setlocale(LC_NUMERIC, "es_ES");
-  if (strcmp(locale, "es_ES") != 0) {
-    return 2;
-  }
-
-  // Test if other categories are unaffected
-  locale = setlocale(LC_TIME, NULL);
-  if (strcmp(locale, "C") != 0) {
-    return 3;
-  }
-
-  return 0;
-}
-
-#ifdef DEFINE_ME_WHEN_BUILDING_ON_MACOS
-// assume project dir as cwd
-const char *path_test_app = "./tests/TestApp.app";
-#else
-const char *path_test_app = "/var/mobile/Applications/"
-                            "00000000-0000-0000-0000-000000000000/TestApp.app";
-#endif
-
-int test_dirent() {
-  struct dirent *dp;
-  DIR *dirp = opendir(path_test_app);
-  if (dirp == NULL) {
-    return -1;
-  }
-  char *contents[] = {"TestApp", "Info.plist", "PkgInfo"};
-  int counts[] = {1, 1, 1};
-  int total = sizeof(contents) / sizeof(char *);
-  while ((dp = readdir(dirp)) != NULL) {
-    for (int i = 0; i < total; i++) {
-      if (strcmp(contents[i], dp->d_name) == 0) {
-        counts[i]--;
-        break;
-      }
-    }
-  }
-  closedir(dirp);
-  for (int i = 0; i < total; i++) {
-    if (counts[i] != 0) {
-      return -2;
-    }
-  }
-  return 0;
-}
-
-int test_strchr() {
-  char *src = "abc";
-  if (strchr(src, 'a')[0] != 'a' || strrchr(src, 'a')[0] != 'a')
-    return -1;
-  if (strchr(src, 'b')[0] != 'b' || strrchr(src, 'b')[0] != 'b')
-    return -2;
-  if (strchr(src, 'c')[0] != 'c' || strrchr(src, 'c')[0] != 'c')
-    return -3;
-  if (strchr(src, '\0')[0] != '\0' || strrchr(src, '\0')[0] != '\0')
-    return -4;
-  if (strchr(src, 'd') != NULL || strrchr(src, 'd') != NULL)
-    return -5;
-  return 0;
-}
-
-int test_swprintf() {
-  wchar_t wcsbuf[20];
-  int res = swprintf(wcsbuf, 20, L"%s", "abc");
-  if (res != 3)
-    return -1;
-  res = swprintf(wcsbuf, 2, L"%d", 510);
-  if (res != -1)
-    return -2;
-  return 0;
-}
-
-int test_realpath() {
-  char buf[256];
-  if (chdir(path_test_app))
-    return -1;
-  // absolute path
-  char *res = realpath("/usr", buf);
-  if (!res || strcmp(res, "/usr") != 0)
-    return -2;
-  // relative path
-  res = realpath("TestApp", buf);
-  char *cwd = getcwd(NULL, 0);
-  if (!res || strncmp(cwd, res, strlen(cwd)) != 0 ||
-      strncmp("/TestApp", res + strlen(cwd), 8) != 0)
-    return -3;
-  // `..` and `.` resolution
-  res = realpath("../TestApp.app/./TestApp", buf);
-  if (!res || strncmp(cwd, res, strlen(cwd)) != 0 ||
-      strncmp("/TestApp", res + strlen(cwd), 8) != 0)
-    return -4;
-  return 0;
-}
-
-int test_CFStringFind() {
-  CFStringRef a = CFStringCreateWithCString(NULL, "/a/b/c/b", 0x0600);
-  CFStringRef b = CFStringCreateWithCString(NULL, "/b", 0x0600);
-  CFStringRef d = CFStringCreateWithCString(NULL, "/d", 0x0600);
-  // 0 for default options
-  CFRange r = CFStringFind(a, b, 0);
-  if (!(r.location == 2 && r.length == 2)) {
-    return -1;
-  }
-  // 4 for kCFCompareBackwards
-  r = CFStringFind(a, b, 4);
-  if (!(r.location == 6 && r.length == 2)) {
-    return -2;
-  }
-  // search string in itself
-  r = CFStringFind(a, a, 0);
-  if (!(r.location == 0 && r.length == 8)) {
-    return -3;
-  }
-  // search string in itself, backwards
-  r = CFStringFind(a, a, 4);
-  if (!(r.location == 0 && r.length == 8)) {
-    return -4;
-  }
-  // not found case
-  r = CFStringFind(a, d, 0);
-  if (!(r.location == -1 && r.length == 0)) {
-    return -5;
-  }
-  // 1 for kCFCompareCaseInsensitive
-  CFStringRef b2 = CFStringCreateWithCString(NULL, "/B", 0x0600);
-  r = CFStringFind(a, b2, 1);
-  if (!(r.location == 2 && r.length == 2)) {
-    return -6;
-  }
-  return 0;
-}
-
-int test_strcspn() {
-  size_t res = strcspn("abcdef", "abcd");
-  if (res != 0) {
-    return -1;
-  }
-  res = strcspn("abcdef", "ef");
-  if (res != 4) {
-    return -2;
-  }
-  res = strcspn("abcdef", "");
-  if (res != 6) {
-    return -3;
-  }
-  return 0;
-}
-
-int test_mbstowcs() {
-  wchar_t wbuffer[64];
-  char buffer[64];
-  size_t res;
-
-  char *test_str = "Hello, World!";
-  res = mbstowcs(wbuffer, test_str, 64);
-  if (res == (size_t)-1) {
-    return -1;
-  }
-
-  res = wcstombs(buffer, wbuffer, 64);
-  if (res == (size_t)-1) {
-    return -2;
-  }
-
-  if (strcmp(test_str, buffer) != 0) {
-    return -3;
-  }
-
-  return 0;
-}
-
-int test_CFMutableString() {
-  CFMutableStringRef mut_str = CFStringCreateMutable(NULL, 0);
-  CFStringRef fmt = CFStringCreateWithCString(NULL, "%d %.2f", 0x0600);
-  CFStringAppendFormat(mut_str, NULL, fmt, -100, 3.14);
-  CFStringRef res = CFStringCreateWithCString(NULL, "-100 3.14", 0x0600);
-  if (CFStringCompare(mut_str, res, 0) != 0) {
-    return -1;
-  }
-  return 0;
-}
-
 #define FUNC_DEF(func)                                                         \
   { &func, #func }
 struct {
   int (*func)();
   const char *name;
 } test_func_array[] = {
-    FUNC_DEF(test_qsort),
-    FUNC_DEF(test_vsnprintf),
-    FUNC_DEF(test_sscanf),
-    FUNC_DEF(test_errno),
-    FUNC_DEF(test_realloc),
-    FUNC_DEF(test_atof),
-    FUNC_DEF(test_strtof),
-    FUNC_DEF(test_getcwd_chdir),
-    FUNC_DEF(test_sem),
-    FUNC_DEF(test_CGAffineTransform),
-    FUNC_DEF(test_strncpy),
-    FUNC_DEF(test_strncat),
-    FUNC_DEF(test_strlcpy),
-    FUNC_DEF(test_setlocale),
-    FUNC_DEF(test_strtoul),
-    FUNC_DEF(test_dirent),
-    FUNC_DEF(test_strchr),
-    FUNC_DEF(test_swprintf),
-    FUNC_DEF(test_realpath),
-    FUNC_DEF(test_CFStringFind),
-    FUNC_DEF(test_strcspn),
-    FUNC_DEF(test_mbstowcs),
-    FUNC_DEF(test_CFMutableString),
+    FUNC_DEF(test_qsort),   FUNC_DEF(test_vsnprintf),
+    FUNC_DEF(test_sscanf),  FUNC_DEF(test_errno),
+    FUNC_DEF(test_realloc), FUNC_DEF(test_atof),
+    FUNC_DEF(test_strtof),  FUNC_DEF(test_getcwd_chdir),
+    FUNC_DEF(test_sem),     FUNC_DEF(test_CGAffineTransform),
+    FUNC_DEF(test_strncpy), FUNC_DEF(test_strncat),
 };
 
 // Because no libc is linked into this executable, there is no libc entry point

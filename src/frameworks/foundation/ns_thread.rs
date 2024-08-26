@@ -6,19 +6,19 @@
 //! `NSThread`.
 
 use super::NSTimeInterval;
-use crate::dyld::HostFunction;
+use crate::dyld::FunctionExports;
 use crate::frameworks::core_foundation::CFTypeRef;
 use crate::libc::pthread::thread::{
     pthread_attr_init, pthread_attr_setdetachstate, pthread_attr_t, pthread_create, pthread_t,
     PTHREAD_CREATE_DETACHED,
 };
 use crate::mem::{guest_size_of, MutPtr};
-use crate::msg;
 use crate::objc::{
     id, msg_send, nil, objc_classes, release, retain, Class, ClassExports, HostObject, NSZonePtr,
     SEL,
 };
 use crate::Environment;
+use crate::{export_c_func, msg};
 use std::time::Duration;
 
 struct NSThreadHostObject {
@@ -79,11 +79,11 @@ pub const CLASSES: ClassExports = objc_classes! {
     retain(env, target);
     retain(env, object);
 
-    let symb = "__touchHLE_NSThreadInvocationHelper";
-    let hf: HostFunction = &(_touchHLE_NSThreadInvocationHelper as fn(&mut Environment, _) -> _);
+    let symb = "__ns_thread_invocation";
     let gf = env
         .dyld
-        .create_guest_function(&mut env.mem, symb, hf);
+        .create_private_proc_address(&mut env.mem, &mut env.cpu, symb)
+        .unwrap_or_else(|_| panic!("create_private_proc_address failed {}", symb));
 
     let attr: MutPtr<pthread_attr_t> = env.mem.alloc(guest_size_of::<pthread_attr_t>()).cast();
     pthread_attr_init(env, attr);
@@ -98,16 +98,36 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // TODO: construction etc
 
+- (id)initWithTarget:(id)target selector:(SEL)selector object:(id)object {
+    let host_object: &mut NSThreadHostObject = env.objc.borrow_mut(this);
+    host_object.target = target;
+    host_object.selector = Some(selector);
+    host_object.object = object;
+    this
+}
+
+- (())start {
+    let symb = "__ns_thread_invocation";
+    let gf = env
+        .dyld
+        .create_private_proc_address(&mut env.mem, &mut env.cpu, symb)
+        .unwrap_or_else(|_| panic!("create_private_proc_address failed {}", symb));
+
+    let thread_ptr: MutPtr<pthread_t> = env.mem.alloc(guest_size_of::<pthread_t>()).cast();
+    pthread_create(env, thread_ptr, crate::mem::ConstPtr::null(), gf, this.cast());
+    //env.objc.borrow_mut::<NSThreadHostObject>(this).thread = Some(env.mem.read(thread_ptr));
+}
+
 @end
 
 };
 
 type NSThreadRef = CFTypeRef;
 
-pub fn _touchHLE_NSThreadInvocationHelper(env: &mut Environment, ns_thread_obj: NSThreadRef) {
+pub fn _ns_thread_invocation(env: &mut Environment, ns_thread_obj: NSThreadRef) {
     let class: Class = msg![env; ns_thread_obj class];
     log_dbg!(
-        "_touchHLE_NSThreadInvocationHelper on object of class: {}",
+        "_ns_thread_invocation on object of class: {}",
         env.objc.get_class_name(class)
     );
     assert_eq!(class, env.objc.get_known_class("NSThread", &mut env.mem));
@@ -126,3 +146,5 @@ pub fn _touchHLE_NSThreadInvocationHelper(env: &mut Environment, ns_thread_obj: 
 
     // TODO: NSThread exit
 }
+
+pub const PRIVATE_FUNCTIONS: FunctionExports = &[export_c_func!(_ns_thread_invocation(_))];

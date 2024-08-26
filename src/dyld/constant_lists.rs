@@ -6,9 +6,7 @@
 //! Separate module just for the constant lists, since this will probably be a
 //! very long and frequently-updated list.
 
-use crate::frameworks::{
-    core_foundation, core_graphics, foundation, media_player, opengles, uikit,
-};
+use crate::frameworks::{core_foundation, core_graphics, foundation, media_player, opengles};
 use crate::libc;
 
 /// All the lists of constants that the linker should search through.
@@ -20,12 +18,9 @@ pub const CONSTANT_LISTS: &[super::ConstantExports] = &[
     core_graphics::cg_affine_transform::CONSTANTS,
     core_graphics::cg_color_space::CONSTANTS,
     core_graphics::cg_geometry::CONSTANTS,
-    foundation::ns_error::CONSTANTS,
     foundation::ns_exception::CONSTANTS,
-    foundation::ns_keyed_unarchiver::CONSTANTS,
     foundation::ns_locale::CONSTANTS,
     foundation::ns_run_loop::CONSTANTS,
     media_player::movie_player::CONSTANTS,
     opengles::eagl::CONSTANTS,
-    uikit::ui_device::CONSTANTS,
 ];
