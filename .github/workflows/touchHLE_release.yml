@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "Unofficial-Stole-Code" ]
   pull_request:
-    branches: [ "Unofficial-Stole-Code" ]
+    branches: [ "Unofficial-Stole-Code-1" ]
 
 env:
   CARGO_TERM_COLOR: always
