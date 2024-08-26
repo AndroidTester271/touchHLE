@@ -2,9 +2,9 @@ name: Build touchHLE
 
 on:
   push:
-    branches: [ "tmp-nex-game" ]
+    branches: [ "tmp-ab-new" ]
   pull_request:
-    branches: [ "tmp-nex-game" ]
+    branches: [ "tmp-ab-new" ]
 
 env:
   CARGO_TERM_COLOR: always
