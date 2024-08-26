@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "tmp-cray-new" ]
   pull_request:
-    branches: [ "trunk" ]
+    branches: [ "tmp-cray-new" ]
 
 env:
   CARGO_TERM_COLOR: always
